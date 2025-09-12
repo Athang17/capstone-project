@@ -51,6 +51,12 @@
               color: var(--text-color);
               background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
               min-height: 100vh;
+              /* Fix for scrolling issues when dev tools are open */
+              position: relative;
+              overflow-y: auto !important;
+              height: 100% !important;
+              display: flex;
+              flex-direction: column;
           }
         
         header {
@@ -266,8 +272,70 @@
               background-color: rgba(245, 245, 245, 0.85);
           }
         
-        #call-teacher-btn {
+        .expert-controls {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
             margin-bottom: 15px;
+        }
+        
+        #call-teacher-btn {
+            margin-bottom: 0;
+        }
+        
+        .update-indicator {
+            display: flex;
+            align-items: center;
+            padding: 5px 10px;
+            background-color: rgba(245, 245, 245, 0.7);
+            border-radius: 20px;
+            font-size: 0.9rem;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        .indicator-dot {
+            width: 10px;
+            height: 10px;
+            border-radius: 50%;
+            background-color: #4CAF50;
+            margin-right: 8px;
+            transition: background-color 0.5s ease;
+        }
+        
+        .indicator-dot.updating {
+            background-color: #FFC107;
+            animation: pulse 1.5s infinite;
+        }
+        
+        @keyframes pulse {
+            0% { opacity: 0.5; }
+            50% { opacity: 1; }
+            100% { opacity: 0.5; }
+        }
+        
+        .teacher-container {
+            margin-top: 15px;
+        }
+        
+        #teacher-advice-container {
+            background-color: rgba(245, 245, 245, 0.7);
+            border-radius: var(--border-radius);
+            padding: 15px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            box-shadow: var(--shadow-sm) inset;
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            transition: var(--transition);
+            white-space: pre-wrap;
+        }
+        
+        .timestamp {
+            font-size: 0.8rem;
+            color: #666;
+            margin-top: 5px;
+            text-align: right;
+            font-style: italic;
         }
         
         /* Custom scrollbar */
@@ -355,13 +423,25 @@
                 <!-- Expert Consultant Section -->
                 <div class="dashboard-section">
                     <h3>Expert Consultant</h3>
-                    <button id="call-teacher-btn">
-                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                        </svg>
-                        Manually Call Teacher for Help
-                    </button>
-                    <p>Latest Teacher Advice: <div id="teacher-advice">N/A</div></p>
+                    <div class="expert-controls">
+                        <button id="call-teacher-btn">
+                            <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            Global Update
+                        </button>
+                        <div id="model-update-indicator" class="update-indicator">
+                            <span class="indicator-dot"></span>
+                            <span class="indicator-text">Model Status: Ready</span>
+                        </div>
+                    </div>
+                    <div class="teacher-container">
+                        <h4>Expert Consultant Output</h4>
+                        <div id="teacher-advice-container">
+                            <div id="teacher-advice">No expert advice available yet. Click "Global Update" to request expert input.</div>
+                            <div id="teacher-timestamp" class="timestamp"></div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </article>
@@ -840,10 +920,10 @@ function setupSocketListeners() {
                 const modelPromise = loadCodeModel();
                 
                 // Store training data
-                let currentPrompt = "";
-                let currentGeneratedCode = "";
-                let currentEditedCode = "";
-                let originalGeneratedCode = ""; // Add missing variable declaration
+                window.currentPrompt = "";
+                window.currentGeneratedCode = "";
+                window.currentEditedCode = "";
+                window.originalGeneratedCode = ""; // Add missing variable declaration
                 
                 // Implement a full Flower client with TensorFlow.js integration
                 class MyFlowerClient extends fl.client.Client {
@@ -1034,9 +1114,9 @@ function setupSocketListeners() {
                         elements.outputContainer.classList.remove('hidden');
                         
                         // Store the current prompt and generated code
-                        currentPrompt = prompt;
-                        currentGeneratedCode = code;
-                        originalGeneratedCode = code; // Store original code for comparison
+                        window.currentPrompt = prompt;
+                        window.currentGeneratedCode = code;
+                        window.originalGeneratedCode = code; // Store original code for comparison
                         
                         logMessage("Code received and displayed successfully", "success");
                     } catch (error) {
@@ -1066,7 +1146,7 @@ function setupSocketListeners() {
                 
                 elements.improveBtn.addEventListener('click', () => {
                     // Get the edited code
-                    currentEditedCode = elements.outputCode.textContent;
+                    window.currentEditedCode = elements.outputCode.textContent;
                     
                     // Make the code non-editable again
                     elements.outputCode.contentEditable = "false";
@@ -1097,6 +1177,32 @@ function setupSocketListeners() {
                              console.log('Comment difference:', commentDiff);
                              console.groupEnd();
                              
+                             // Determine preference value based on code changes
+                             let preferenceValue = 0;
+                             if (editedLines > originalLines) {
+                                 preferenceValue = 1;  // User prefers longer, more verbose code
+                             } else if (editedLines < originalLines) {
+                                 preferenceValue = -1; // User prefers shorter, more concise code
+                             } else if (editedComments > originalComments) {
+                                 preferenceValue = 0.7;  // User prefers more comments
+                             } else if (editedComments < originalComments) {
+                                 preferenceValue = -0.7; // User prefers fewer comments
+                             } else {
+                                 preferenceValue = 0.1; // Small change
+                             }
+                             
+                             // Update the preference display immediately for better UX
+                             const preferenceDisplay = document.getElementById('preference-display');
+                             if (preferenceDisplay) {
+                                 let preferenceText = "Neutral";
+                                 if (preferenceValue > 0.5) {
+                                     preferenceText = "Verbose Code";
+                                 } else if (preferenceValue < -0.5) {
+                                     preferenceText = "Concise Code";
+                                 }
+                                 preferenceDisplay.textContent = preferenceText;
+                             }
+                             
                              // Send the improvement to the server
                              window.socket.emit('submit_improvement', {
                                  client_id: getClientId(),
@@ -1107,12 +1213,13 @@ function setupSocketListeners() {
                              
                              logMessage("Sent code improvement to server", "preference");
                              logMessage(`Changes: ${lineDiff} lines, ${commentDiff} comments`, "preference");
+                             logMessage(`Preference updated to: ${preferenceValue > 0.5 ? 'Verbose Code' : preferenceValue < -0.5 ? 'Concise Code' : 'Neutral'}`, "preference");
                          } else {
                              logMessage("Socket connection not available", "error");
                          }
                      }
                     
-                    submitImprovement(originalGeneratedCode, currentEditedCode, currentPrompt);
+                    submitImprovement(window.originalGeneratedCode, window.currentEditedCode, window.currentPrompt);
                     
                     logMessage("Improvement submitted. Your preferences are being learned.", "success");
                     
@@ -1164,17 +1271,131 @@ function setupSocketListeners() {
             }
         }
         
-        // Set up Call Teacher button functionality
+        // Set up Global Update button functionality
         document.getElementById('call-teacher-btn').addEventListener('click', function() {
-            logMessage("Requesting teacher advice...", "info");
+            logMessage("Requesting global updates...", "info");
             if (window.socket) {
-                window.socket.emit('call_teacher', { client_id: getClientId() });
+                // Get the current prompt
+                const currentPrompt = document.getElementById('prompt-input').value;
+                
+                // Update UI to show processing state
+                const indicatorDot = document.querySelector('.indicator-dot');
+                const indicatorText = document.querySelector('.indicator-text');
+                indicatorDot.classList.add('updating');
+                indicatorText.textContent = 'Model Status: Updating...';
+                
+                // Request teacher advice with the current prompt
+                window.socket.emit('call_teacher', { 
+                    client_id: getClientId(),
+                    prompt: currentPrompt
+                });
+                
+                // Also request the latest global preference
+                window.socket.emit('get_global_preference', { client_id: getClientId() });
+                
+                logMessage("Global update requested - fetching expert advice and updating model", "success");
             } else {
                 logMessage("Socket connection not available", "error");
             }
         });
                 
-                // Start the initialization process
+                // Set up socket connection and event listeners
+        // Connect to the Socket.IO server with explicit URL
+        window.socket = io('http://localhost:8080');
+        
+        // Listen for connection events
+        window.socket.on('connect', function() {
+            logMessage("Socket.IO connection established", "success");
+            
+            // Listen for teacher progress updates
+            window.socket.on('teacher_progress', function(data) {
+                const modelName = data.model || 'Llama 3.1 (via Groq API)';
+                logMessage(`Expert consultant (${modelName}): ${data.message}`, "info");
+            });
+            
+            // Listen for teacher advice responses
+            window.socket.on('teacher_response', function(data) {
+                const teacherAdvice = data.synthetic_data;
+                const timestamp = data.timestamp || new Date().toLocaleString();
+                const modelUpdated = data.model_updated || false;
+                const modelName = data.model_name || 'Llama 3.1 (via Groq API)';
+                
+                // Update the teacher advice display
+                document.getElementById('teacher-advice').textContent = teacherAdvice;
+                document.getElementById('teacher-timestamp').textContent = `Updated: ${timestamp} (via ${modelName})`;
+                
+                // Reset the model update indicator
+                const indicatorDot = document.querySelector('.indicator-dot');
+                const indicatorText = document.querySelector('.indicator-text');
+                indicatorDot.classList.remove('updating');
+                
+                if (modelUpdated) {
+                    // Show success state
+                    indicatorText.textContent = `Model Status: Updated with ${modelName}`;
+                    logMessage(`Model updated with expert knowledge from ${modelName}`, "model");
+                    
+                    // Flash effect to indicate update
+                    document.getElementById('teacher-advice-container').style.backgroundColor = 'rgba(76, 175, 80, 0.2)';
+                    setTimeout(() => {
+                        document.getElementById('teacher-advice-container').style.backgroundColor = '';
+                    }, 1000);
+                } else {
+                    indicatorText.textContent = 'Model Status: Ready';
+                }
+                
+                logMessage("Received new expert advice", "success");
+            });
+            
+            // Listen for teacher errors
+            window.socket.on('teacher_error', function(data) {
+                const modelName = data.model_name || 'Llama 3.1 (via Groq API)';
+                document.getElementById('teacher-advice').textContent = `Error from ${modelName}: ${data.error}`;
+                document.getElementById('teacher-timestamp').textContent = `Error occurred: ${new Date().toLocaleString()}`;
+                
+                // Reset the model update indicator to error state
+                const indicatorDot = document.querySelector('.indicator-dot');
+                const indicatorText = document.querySelector('.indicator-text');
+                indicatorDot.classList.remove('updating');
+                indicatorDot.style.backgroundColor = 'red';
+                indicatorText.textContent = `Model Status: Error with ${modelName}`;
+                
+                logMessage(`Expert consultant error (${modelName}): ${data.error}`, "error");
+                
+                // Reset after a delay
+                setTimeout(() => {
+                    indicatorDot.style.backgroundColor = '';
+                    indicatorText.textContent = 'Model Status: Ready';
+                }, 5000);
+            });
+            
+            // Listen for global preference updates
+            window.socket.on('global_preference_update', function(data) {
+                document.getElementById('preference-display').textContent = 
+                    typeof data.preference === 'number' ? 
+                    data.preference.toFixed(2) : 
+                    JSON.stringify(data.preference);
+                    
+                logMessage("Received global preference update: " + 
+                    (typeof data.preference === 'number' ? 
+                    data.preference.toFixed(2) : 
+                    JSON.stringify(data.preference)), "preference");
+            });
+            
+            // Listen for model update notifications
+            window.socket.on('model_update', function(data) {
+                logMessage(data.message, "model");
+            });
+        });
+        
+        window.socket.on('disconnect', function() {
+            logMessage("Socket.IO connection lost", "error");
+        });
+        
+        window.socket.on('connect_error', function(error) {
+            logMessage("Socket.IO connection error: " + error, "error");
+        });
+        
+        // Start the initialization process
         initFlowerClient();
     </script>
 </body>

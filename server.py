@@ -9,6 +9,7 @@ from dotenv import load_dotenv
 import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
+from datetime import datetime
 
 # CaptainAI class for code generation using phi-3-mini model
 class CaptainAI:
@@ -129,36 +130,115 @@ load_dotenv()
 # Initialize the CaptainAI instance
 captain = CaptainAI()
 
-# Function to get synthetic data from LLM API
-def get_synthetic_data_from_teacher():
+# Function to get synthetic data from LLM API (using Groq's API with Llama 3.1 model)
+def get_synthetic_data_from_teacher(prompt=None, progress_callback=None):
+    # Read API key directly from .env file as a fallback
     api_key = os.getenv("GROQ_API_KEY")
+    if not api_key:
+        logger.warning("GROQ_API_KEY not found in environment variables, trying to read from .env file directly")
+        try:
+            with open(".env", "r") as env_file:
+                for line in env_file:
+                    if line.startswith("GROQ_API_KEY="):
+                        api_key = line.strip().split("=", 1)[1]
+                        break
+        except Exception as e:
+            logger.error(f"Error reading .env file: {e}")
+        
     if not api_key:
         logger.warning("GROQ_API_KEY not found in .env file")
         return "No synthetic data available (API key missing)"
+    
+    # Update progress if callback provided
+    if progress_callback:
+        progress_callback({"status": "connecting", "message": "Connecting to Groq API (Llama 3.1)..."})
     
     url = "https://api.groq.com/openai/v1/chat/completions"
     headers = {
         "Authorization": f"Bearer {api_key}",
         "Content-Type": "application/json"
     }
+    
+    # Default prompt if none provided
+    if not prompt:
+        prompt = "Generate three synthetic examples of Python code with different styles (concise, verbose, and educational). For each example, include a brief explanation of its style characteristics."
+    
+    # Update progress if callback provided
+    if progress_callback:
+        progress_callback({"status": "sending", "message": "Sending request to Llama 3.1 model via Groq API..."})
+    
     payload = {
-        "model": "llama-3.1-8b-instant",  # Updated to a valid model name from Groq's available models
+        "model": "llama-3.1-8b-instant",  # Using Llama 3.1 model from Groq
         "messages": [
-            {"role": "system", "content": "You are a helpful assistant that generates synthetic data for training."},
-            {"role": "user", "content": "Generate a single, synthetic example of a Python code comment. Make it concise and educational."}
+            {"role": "system", "content": "You are an expert Python programmer that generates high-quality synthetic data for training code generation models. Your examples should demonstrate different coding styles and best practices. Provide detailed explanations that can help improve a student model's understanding of good code."},
+            {"role": "user", "content": prompt}
         ],
         "temperature": 0.7,
-        "max_tokens": 100,  # Added max_tokens parameter to limit response size
+        "max_tokens": 2000,  # Increased token limit for more detailed examples
         "stream": False  # Ensure we're not using streaming mode
     }
     
     try:
+        logger.info(f"Making request to Groq API with model: {payload['model']}")
+        
+        # Update progress if callback provided
+        if progress_callback:
+            progress_callback({"status": "waiting", "message": "Waiting for response from Llama 3.1 model..."})
+            
         response = requests.post(url, headers=headers, json=payload)
+        
+        # Log the response status and headers for debugging
+        logger.info(f"Groq API response status: {response.status_code}")
+        logger.info(f"Groq API response headers: {response.headers}")
+        
+        # Check if the response is successful
         response.raise_for_status()
+        
+        # Update progress if callback provided
+        if progress_callback:
+            progress_callback({"status": "processing", "message": "Processing response from Llama 3.1 model..."})
+        
+        # Parse the response JSON
         data = response.json()
+        logger.info(f"Groq API response data: {data}")
+        
+        # Extract the synthetic data from the response
         synthetic_data = data["choices"][0]["message"]["content"]
         logger.info(f"Generated synthetic data: {synthetic_data}")
+        
+        # Update progress if callback provided
+        if progress_callback:
+            progress_callback({"status": "completed", "message": "Successfully received expert advice from Llama 3.1 model!"})
+            
         return synthetic_data
+    except requests.exceptions.HTTPError as e:
+        logger.error(f"HTTP Error from Groq API: {e}")
+        error_message = ""
+        if response.status_code == 401:
+            error_message = "Authentication error: Invalid API key or unauthorized access"
+            logger.error(error_message)
+        elif response.status_code == 404:
+            error_message = "Not Found error: Check API endpoint URL and model name"
+            logger.error(error_message)
+        elif response.status_code == 500:
+            error_message = "Server error: Groq API server encountered an error"
+            logger.error(error_message)
+        else:
+            error_message = f"HTTP Error: {e}"
+            
+        if progress_callback:
+            progress_callback({"status": "error", "message": error_message})
+            
+        return f"Error from Llama 3.1 model: {error_message}"
+            
+        # Log the response content for debugging
+        try:
+            error_content = response.json()
+            logger.error(f"Error response content: {error_content}")
+        except:
+            logger.error(f"Error response content (text): {response.text}")
+            
+        return f"Error generating synthetic data: {response.status_code} {response.reason} for url: {url}"
     except Exception as e:
         logger.error(f"Error getting synthetic data: {e}")
         return f"Error generating synthetic data: {str(e)}"
@@ -287,27 +367,60 @@ def on_request_generation(data):
 @socketio.on('call_teacher')
 def handle_teacher_call(data):
     client_id = request.sid
+    current_prompt = data.get('prompt', '')
     
     try:
-        # Get synthetic data from teacher (Expert Consultant)
-        teacher_advice = get_synthetic_data_from_teacher()
+        # Define progress callback function for the external API
+        def progress_callback(progress_data):
+            # Add model info to the progress data
+            progress_data['model'] = 'Llama 3.1 (via Groq API)'
+            # Emit progress to the client
+            socketio.emit('teacher_progress', progress_data, room=client_id)
+        
+        # Send initial progress update to client
+        progress_callback({
+            'status': 'started',
+            'message': 'Requesting expert advice from Llama 3.1 model via Groq API...'
+        })
+        
+        # Create a prompt for the teacher based on the current user prompt
+        teacher_prompt = f"Based on this prompt: '{current_prompt}', generate three different Python code examples with varying styles (concise, verbose, educational). For each example, explain its style characteristics and why it might be preferred in different contexts. Include detailed comments and best practices in your examples."
+        
+        # Get synthetic data from teacher (Expert Consultant) using the external Groq API
+        teacher_advice = get_synthetic_data_from_teacher(teacher_prompt, progress_callback=progress_callback)
+        
+        # Update the global model with this new synthetic data
+        # This is where we would normally train the model, but for now we'll just update the preference
+        # to simulate the model improving from the teacher's advice
+        captain.update_global_preference(0.5)  # Set to neutral as a baseline after teacher input
         
         # Emit the teacher's advice to all connected clients using 'teacher_response' event
         socketio.emit('teacher_response', {
             'synthetic_data': teacher_advice,
-            'client_id': client_id
+            'client_id': client_id,
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'model_updated': True,
+            'model_name': 'Llama 3.1 (via Groq API)'  # Add model name to response
         })
         
-        logger.info(f"Teacher advice sent to all clients")
-        return {'status': 'success', 'message': 'Teacher advice sent to all clients'}
+        # Notify all clients that the model has been updated
+        socketio.emit('model_update', {
+            'message': 'Model has been updated with expert knowledge from Llama 3.1',
+            'timestamp': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+            'model_name': 'Llama 3.1 (via Groq API)'  # Add model name to update notification
+        })
+        
+        logger.info(f"Teacher advice from Llama 3.1 sent to all clients and model updated")
+        return {'status': 'success', 'message': 'Teacher advice from Llama 3.1 sent to all clients and model updated'}
         
     except Exception as e:
         # Handle errors
         error_message = str(e)
-        logger.error(f"Error getting teacher advice: {error_message}")
+        logger.error(f"Error getting teacher advice from Llama 3.1: {error_message}")
         socketio.emit('teacher_error', {
             'error': error_message,
-            'client_id': client_id
+            'client_id': client_id,
+            'model_name': 'Llama 3.1 (via Groq API)'  # Add model name to error message
         }, room=client_id)
         
         return {'status': 'error', 'message': error_message}

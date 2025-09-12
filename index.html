@@ -1,0 +1,1182 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <meta name="theme-color" content="#4361ee">
+    <title>Privacy-Preserving Code Assistant</title>
+    <!-- Load Socket.IO first -->
+    <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
+    
+    <!-- Load TensorFlow.js with async to prevent blocking page load -->
+    <script async src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
+    
+    <!-- TensorFlow.js Hub removed due to ORB blocking issues -->
+    
+    <!-- Load local Flower library with async to prevent blocking page load -->
+    <script async src="flower-client-browser.js"></script>
+    
+    <!-- Add Pico.css for better styling -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
+    
+    <!-- Add loading indicator -->
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/spinkit@2.0.1/spinkit.min.css">
+    
+    <!-- Add Google Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
+    
+    <style>
+        :root {
+            --primary-color: #4361ee;
+            --primary-hover: #3a56d4;
+            --secondary-color: #3a0ca3;
+            --success-color: #4CAF50;
+            --background-color: #f8f9fa;
+            --code-bg-color: #f5f5f5;
+            --text-color: #333;
+            --border-radius: 12px;
+            --shadow-sm: 0 2px 8px rgba(0,0,0,0.05);
+            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
+            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
+            --transition: all 0.3s ease;
+        }
+        
+        body {
+              max-width: 900px;
+              margin: 0 auto;
+              padding: 2rem;
+              font-family: 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+              line-height: 1.6;
+              color: var(--text-color);
+              background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
+              min-height: 100vh;
+          }
+        
+        header {
+             margin-bottom: 2rem;
+             text-align: center;
+         }
+         
+         h1 {
+             color: #2c3e50;
+             font-weight: 700;
+             letter-spacing: -0.5px;
+         }
+        
+        h2 {
+             font-weight: 600;
+             letter-spacing: -0.3px;
+             color: #2c3e50;
+         }
+         
+         h3 {
+             font-weight: 500;
+             letter-spacing: -0.2px;
+             color: #2c3e50;
+         }
+        
+        .log {
+            background-color: rgba(245, 245, 245, 0.7);
+            border: 1px solid rgba(255, 255, 255, 0.2);
+            padding: 15px;
+            margin-top: 20px;
+            height: 250px;
+            overflow-y: auto;
+            font-family: monospace;
+            border-radius: var(--border-radius);
+            box-shadow: var(--shadow-sm);
+            backdrop-filter: blur(10px);
+            transition: var(--transition);
+        }
+        
+        .success { color: var(--success-color); }
+        .error { color: red; }
+        .info { color: var(--primary-color); }
+        .preference { color: purple; }
+        .model { color: blue; }
+        .warning { color: orange; }
+        
+        .log-entry {
+            margin-bottom: 8px;
+            padding: 8px 10px;
+            border-radius: 6px;
+            transition: var(--transition);
+            border-left: 3px solid transparent;
+        }
+        
+        .log-entry.success {
+            background-color: rgba(76, 175, 80, 0.1);
+            border-left-color: var(--success-color);
+        }
+        
+        .log-entry.error {
+            background-color: rgba(244, 67, 54, 0.1);
+            border-left-color: red;
+        }
+        
+        .log-entry.info {
+            background-color: rgba(33, 150, 243, 0.1);
+            border-left-color: var(--primary-color);
+        }
+        
+        .log-entry.preference {
+            background-color: rgba(156, 39, 176, 0.1);
+            border-left-color: purple;
+        }
+        
+        .log-entry.model {
+            background-color: rgba(33, 150, 243, 0.1);
+            border-left-color: blue;
+        }
+        
+        .log-entry.warning {
+            background-color: rgba(255, 152, 0, 0.1);
+            border-left-color: orange;
+        }
+        
+        .log-entry:hover {
+            transform: translateX(2px);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        #output-code {
+            background-color: rgba(40, 44, 52, 0.85);
+            border: 1px solid rgba(255, 255, 255, 0.1);
+            padding: 20px;
+            border-radius: var(--border-radius);
+            white-space: pre-wrap;
+            font-family: 'Fira Code', 'Courier New', monospace;
+            min-height: 250px;
+            margin-bottom: 20px;
+            box-shadow: var(--shadow-md);
+            transition: var(--transition);
+            backdrop-filter: blur(10px);
+            color: #e6e6e6;
+        }
+        
+        .hidden {
+            display: none;
+        }
+        
+        .client-badge {
+            display: inline-block;
+            padding: 5px 10px;
+            border-radius: 16px;
+            background-color: var(--primary-color);
+            color: white;
+            font-size: 0.8rem;
+            margin-left: 10px;
+            box-shadow: var(--shadow-sm);
+            font-weight: 500;
+        }
+        
+        button {
+            transition: var(--transition);
+            border-radius: var(--border-radius);
+            font-weight: 500;
+            padding: 0.75rem 1.25rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.5rem;
+            box-shadow: var(--shadow-sm);
+        }
+        
+        button:hover {
+            transform: translateY(-2px);
+            box-shadow: var(--shadow-md);
+            background-color: var(--primary-hover);
+        }
+        
+        button:active {
+            transform: translateY(0);
+            box-shadow: var(--shadow-sm);
+        }
+        
+        /* Loading indicator */
+        .loading-container {
+            display: none;
+            justify-content: center;
+            align-items: center;
+            margin: 30px 0;
+            cursor: default;
+        }
+        
+        .loading-container.active {
+            display: flex;
+        }
+        
+        .spinner {
+            width: 40px;
+            height: 40px;
+            margin: 0 auto;
+        }
+        
+        /* Dashboard Styling */
+           #demo-dashboard {
+               margin-top: 40px;
+               padding: 30px;
+               background-color: rgba(248, 249, 250, 0.7);
+               border-radius: var(--border-radius);
+               box-shadow: var(--shadow-md);
+               backdrop-filter: blur(10px);
+               border: 1px solid rgba(255, 255, 255, 0.2);
+               transition: var(--transition);
+           }
+           
+           #demo-dashboard h2, #demo-dashboard h3 {
+               color: #2c3e50;
+               font-weight: 600;
+           }
+          
+          #demo-dashboard:hover {
+              box-shadow: var(--shadow-lg);
+          }
+          
+          .dashboard-section {
+              margin-bottom: 25px;
+              padding: 20px;
+              background-color: rgba(255, 255, 255, 0.7);
+              border-radius: var(--border-radius);
+              border: 1px solid rgba(0,0,0,0.05);
+              box-shadow: var(--shadow-sm);
+              transition: var(--transition);
+          }
+          
+          .dashboard-section:hover {
+              box-shadow: var(--shadow-md);
+              transform: translateY(-2px);
+          }
+          
+          #preference-display, #teacher-advice {
+              padding: 15px;
+              background-color: rgba(245, 245, 245, 0.7);
+              border-radius: var(--border-radius);
+              margin-top: 15px;
+              font-family: 'Fira Code', 'Courier New', monospace;
+              min-height: 30px;
+              box-shadow: var(--shadow-sm) inset;
+              backdrop-filter: blur(5px);
+              border: 1px solid rgba(255, 255, 255, 0.1);
+              transition: var(--transition);
+          }
+          
+          #preference-display:hover, #teacher-advice:hover {
+              background-color: rgba(245, 245, 245, 0.85);
+          }
+        
+        #call-teacher-btn {
+            margin-bottom: 15px;
+        }
+        
+        /* Custom scrollbar */
+        ::-webkit-scrollbar {
+            width: 8px;
+            height: 8px;
+        }
+        
+        ::-webkit-scrollbar-track {
+            background: rgba(0, 0, 0, 0.05);
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb {
+            background: rgba(0, 0, 0, 0.2);
+            border-radius: 10px;
+        }
+        
+        ::-webkit-scrollbar-thumb:hover {
+            background: rgba(0, 0, 0, 0.3);
+        }
+    </style>
+</head>
+
+<body>
+    <header>
+        <h2>Privacy-Preserving Code Assistant <span id="client-id" class="client-badge"></span></h2>
+        <p>Status: <span id="status">Starting...</span></p>
+    </header>
+    
+    <main>
+        <article>
+            <h2>Generate Python Code</h2>
+            <textarea id="prompt-input" rows="4" placeholder="Enter your code request..."></textarea>
+            <button id="generate-btn" class="primary">
+                <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+                    <path d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z" fill="currentColor"></path>
+                </svg>
+                Generate Code
+            </button>
+            
+            <!-- Loading indicator -->
+            <div class="loading-container" id="loading">
+                <div class="spinner sk-chase">
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                    <div class="sk-chase-dot"></div>
+                </div>
+                <p>Processing your request...</p>
+            </div>
+            
+            <div id="output-container" class="hidden">
+                <h3>Generated Code</h3>
+                <pre><code id="output-code" class="language-python" contenteditable="false"></code></pre>
+                <div id="feedback-controls">
+                    <button id="edit-btn" class="secondary">
+                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+                            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
+                        </svg>
+                        Edit Code
+                    </button>
+                    <button id="improve-btn" class="primary hidden">
+                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+                            <path d="M20 6L9 17L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                        Submit Improvement
+                    </button>
+                </div>
+            </div>
+            
+            <!-- Demonstration Dashboard Section -->
+            <div id="demo-dashboard">
+                <h2>Demonstration Dashboard</h2>
+                
+                <!-- Federated Learning Section -->
+                <div class="dashboard-section">
+                    <h3>Federated Learning</h3>
+                    <p>Current Team Preference: <div id="preference-display">Neutral</div></p>
+                </div>
+                
+                <!-- Expert Consultant Section -->
+                <div class="dashboard-section">
+                    <h3>Expert Consultant</h3>
+                    <button id="call-teacher-btn">
+                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
+                            <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
+                        </svg>
+                        Manually Call Teacher for Help
+                    </button>
+                    <p>Latest Teacher Advice: <div id="teacher-advice">N/A</div></p>
+                </div>
+            </div>
+        </article>
+    </main>
+    
+    <footer>
+        <h3>Connection Log</h3>
+        <div class="log" id="log"></div>
+    </footer>
+
+    <!-- Use type="module" to ensure this runs after page load and libraries are available -->
+    <script type="module">
+        // Function to check if fl object is available
+        function checkFlowerLoaded() {
+            return new Promise((resolve, reject) => {
+                // If fl is already available, resolve immediately
+                if (window.fl) {
+                    logMessage("Flower library already loaded", "info");
+                    resolve();
+                    return;
+                }
+                
+                // Otherwise, set up a check that runs every 100ms
+                logMessage("Waiting for Flower library to load...", "info");
+                const checkInterval = setInterval(() => {
+                    if (window.fl) {
+                        logMessage("Flower library loaded successfully", "success");
+                        clearInterval(checkInterval);
+                        resolve();
+                    }
+                }, 100);
+                
+                // Set a timeout to reject if it takes too long
+                setTimeout(() => {
+                    clearInterval(checkInterval);
+                    reject(new Error("Timeout waiting for Flower library to load"));
+                }, 10000); // 10 second timeout
+            });
+        }
+        
+        // Function to show/hide loading indicator with performance optimization
+        function showLoading(isLoading) {
+            const loadingElement = document.getElementById('loading');
+            // Use requestAnimationFrame for smoother UI updates
+            requestAnimationFrame(() => {
+                if (isLoading) {
+                    loadingElement.classList.add('active');
+                } else {
+                    loadingElement.classList.remove('active');
+                }
+            });
+        }
+        
+        // Helper function to log messages to console and UI
+function logMessage(message, type = "info") {
+    const clientId = getClientId();
+    const prefix = clientId ? `[Client ${clientId}] ` : "";
+    const timestamp = new Date().toLocaleTimeString();
+    const fullMessage = `[${timestamp}] ${prefix}${message}`;
+    
+    // Log to console with enhanced styling based on message type
+    if (type === "error") {
+        console.error(fullMessage);
+    } else if (type === "success") {
+        console.log("%c" + fullMessage, "color: green; font-weight: bold");
+    } else if (type === "preference") {
+        console.log("%c" + fullMessage, "color: purple; font-weight: bold");
+    } else if (type === "model") {
+        console.log("%c" + fullMessage, "color: blue; font-weight: bold");
+    } else if (type === "warning") {
+        console.warn(fullMessage);
+    } else {
+        console.log(fullMessage);
+    }
+    
+    // Log to UI with performance optimization
+    requestAnimationFrame(() => {
+        const logElement = document.getElementById('log');
+        const entry = document.createElement('div');
+        entry.classList.add(type);
+        entry.textContent = fullMessage;
+        logElement.appendChild(entry);
+        logElement.scrollTop = logElement.scrollHeight;
+    });
+}
+        
+        // Get client ID from URL parameter
+        function getClientId() {
+            const urlParams = new URLSearchParams(window.location.search);
+            return urlParams.get('client');
+        }
+        
+        // Load a pre-trained code generation model with optimized lazy loading approach
+        let codeModel;
+        let modelLoadPromise = null;
+        let modelLoadStarted = false;
+        
+        // Start model loading immediately in the background
+        function startModelLoading() {
+            if (modelLoadStarted) return;
+            modelLoadStarted = true;
+            
+            // Use setTimeout to defer model loading until after page is interactive
+            setTimeout(() => {
+                loadCodeModel().catch(err => {
+                    console.warn("Background model loading failed, will retry when needed", err);
+                    modelLoadPromise = null;
+                });
+            }, 100);
+        }
+        
+        async function loadCodeModel() {
+            // If model is already loaded, return it immediately
+            if (codeModel) return codeModel;
+            
+            // If model is currently loading, return the existing promise
+            if (modelLoadPromise) return modelLoadPromise;
+            
+            // Start loading the model
+            modelLoadPromise = (async () => {
+                logMessage("Loading code generation model...", "info");
+                
+                try {
+                    // Check if TensorFlow.js is loaded
+                    if (typeof tf === 'undefined') {
+                        throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
+                    }
+                    
+                    // For this demo, we'll use a very simple model for preference learning
+                    // This model will learn if users prefer longer or shorter code
+                    const model = tf.sequential();
+                    
+                    // Simple input layer with shape [1] for a single preference value
+                    model.add(tf.layers.dense({
+                        units: 1,
+                        inputShape: [1],
+                        activation: 'linear',
+                        useBias: true
+                    }));
+                    
+                    // Compile with simple settings for preference learning
+                    model.compile({
+                        optimizer: tf.train.adam(0.01),
+                        loss: 'meanSquaredError'
+                    });
+                    
+                    // Initialize with neutral preference
+                    // Dense layer expects weights and bias as separate tensors
+                    const initialWeights = tf.tensor2d([[0.0]]);
+                    const initialBias = tf.tensor1d([0.0]);
+                    model.layers[0].setWeights([initialWeights, initialBias]);
+                    
+                    logMessage("Code generation model created successfully", "success");
+                    codeModel = model;
+                    return model;
+                } catch (error) {
+                    logMessage(`Error loading model: ${error.message}`, "error");
+                    modelLoadPromise = null; // Reset promise so we can try again
+                    modelLoadStarted = false; // Allow retry
+                    throw error;
+                }
+            })();
+            
+            return modelLoadPromise;
+        }
+        
+        // Start model loading in background after page loads
+        if (document.readyState === 'complete') {
+            startModelLoading();
+        } else {
+            window.addEventListener('load', startModelLoading);
+        }
+        
+        // Optimized tokenizer with memoization for better performance
+        const tokenCache = new Map();
+        
+        function tokenizeText(text, maxLength = 50) {
+            // Check cache first
+            const cacheKey = text.trim().toLowerCase();
+            if (tokenCache.has(cacheKey)) {
+                return tokenCache.get(cacheKey);
+            }
+            
+            // In a real application, you would use a proper tokenizer
+            // This is a simplified version for demonstration
+            const words = cacheKey.split(/\s+/).slice(0, maxLength);
+            const tokens = new Array(words.length);
+            
+            // Process words in batches for better performance
+            for (let i = 0; i < words.length; i++) {
+                const word = words[i];
+                // Simple hash function to convert words to token IDs
+                let hash = 0;
+                for (let j = 0; j < word.length; j++) {
+                    hash = ((hash << 5) - hash) + word.charCodeAt(j);
+                    hash |= 0; // Convert to 32bit integer
+                }
+                tokens[i] = Math.abs(hash) % 10000; // Map to vocabulary size
+            }
+            
+            // Pad to maxLength
+            const result = new Array(maxLength).fill(0);
+            tokens.forEach((token, i) => {
+                result[i] = token;
+            });
+            
+            // Store in cache (limit cache size)
+            tokenCache.set(cacheKey, result);
+            if (tokenCache.size > 50) {
+                const oldestKey = tokenCache.keys().next().value;
+                tokenCache.delete(oldestKey);
+            }
+            
+            return result;
+        }
+        
+        // Cache for generated code to improve performance
+        const codeCache = new Map();
+        
+        // Function to request code generation from the server
+        async function requestCodeGeneration(prompt) {
+            return new Promise((resolve, reject) => {
+                try {
+                    // Check if socket is available
+                    if (!window.socket) {
+                        // Create a socket connection if not already established
+                        window.socket = io('http://localhost:8080');
+                        
+                        // Set up event listeners for the socket
+                        setupSocketListeners();
+                    }
+                    
+                    // Function to clean up event listeners and clear timeout
+                    let timeoutId;
+                    const cleanupListeners = () => {
+                        if (timeoutId) clearTimeout(timeoutId); // Clear the timeout when listeners are cleaned up
+                        window.socket.off('generation_progress');
+                        window.socket.off('generation_error');
+                    };
+                    
+                    // Set a timeout in case the server doesn't respond
+                    timeoutId = setTimeout(() => {
+                        cleanupListeners(); // Clean up event listeners on timeout
+                        reject(new Error("Server response timeout"));
+                    }, 60000); // 60 second timeout (increased from 10 seconds)
+                    
+                    // Set up a one-time listener for the generation response
+                    window.socket.once('generation_response', (response) => {
+                        cleanupListeners(); // Clean up other listeners
+                        if (response && response.code) {
+                            logMessage("Received code from server", "success");
+                            resolve(response.code);
+                        } else {
+                            reject(new Error("Invalid response from server"));
+                        }
+                    });
+                    
+                    // Set up listeners for progress updates
+                    window.socket.on('generation_progress', (progress) => {
+                        logMessage(`Generation progress: ${progress.message}`, "info");
+                    });
+                    
+                    // Set up error listener
+                    window.socket.once('generation_error', (error) => {
+                        cleanupListeners(); // Clean up other listeners
+                        logMessage(`Server error: ${error.error}`, "error");
+                        reject(new Error(error.error));
+                    });
+                    
+                    // Emit the request to the server
+                    logMessage("Sending prompt to server for code generation", "info");
+                    window.socket.emit('request_generation', { prompt: prompt });
+                    
+                    // Set a timeout in case the server doesn't respond
+                    setTimeout(() => {
+                        reject(new Error("Server response timeout"));
+                    }, 60000); // 60 second timeout (increased from 10 seconds)
+                    
+                } catch (error) {
+                    console.error("Error requesting code generation:", error);
+                    reject(error);
+                }
+            });
+        }
+        
+        // Set up Socket.IO event listeners
+function setupSocketListeners() {
+    if (!window.socket) return;
+    
+    // Listen for connection events
+    window.socket.on('connect', () => {
+        logMessage("Socket.IO connection established", "success");
+    });
+    
+    window.socket.on('disconnect', () => {
+        logMessage("Socket.IO connection lost", "error");
+    });
+    
+    window.socket.on('connect_error', (error) => {
+        logMessage(`Socket.IO connection error: ${error.message}`, "error");
+    });
+    
+    // Listen for teacher_response event
+    window.socket.on('teacher_response', (data) => {
+        logMessage("Received teacher response from server", "success");
+        // Update the teacher advice display
+        const teacherAdviceElement = document.getElementById('teacher-advice');
+        if (teacherAdviceElement && data.synthetic_data) {
+            teacherAdviceElement.textContent = data.synthetic_data;
+        }
+    });
+    
+    // Listen for global_preference_update event
+    window.socket.on('global_preference_update', (data) => {
+        logMessage("Received global preference update from server", "success");
+        // Update the team preference display
+        const preferenceDisplay = document.getElementById('preference-display');
+        if (preferenceDisplay && data.preference) {
+            preferenceDisplay.textContent = data.preference;
+        }
+    });
+    
+    // Listen for preference updates
+    window.socket.on('preference_updated', (data) => {
+        const preferenceValue = data.preference_value;
+        logMessage(`Model preference updated: ${preferenceValue}`, "preference");
+        
+        // Update the preference display
+        const preferenceDisplay = document.getElementById('preference-display');
+        if (preferenceDisplay) {
+            let preferenceText = "Neutral";
+            if (preferenceValue > 0.5) {
+                preferenceText = "Verbose Code";
+            } else if (preferenceValue < -0.5) {
+                preferenceText = "Concise Code";
+            }
+            preferenceDisplay.textContent = preferenceText;
+        }
+        
+        // Log detailed preference information
+        console.group('Preference Update Details');
+        console.log(`Preference Value: ${preferenceValue}`);
+        console.log(`Message: ${data.message}`);
+        console.log(`Client ID: ${data.client_id}`);
+        console.groupEnd();
+    });
+    
+    // Listen for model update notifications
+    window.socket.on('model_updated', (data) => {
+        logMessage("Model has been updated with your preferences!", "model");
+        
+        // Log detailed model update information
+        console.group('Model Update Details');
+        console.log(`Message: ${data.message}`);
+        console.log(`Updated by: ${data.updated_by}`);
+        console.log(`Timestamp: ${new Date().toISOString()}`);
+        console.groupEnd();
+        
+        // If we have a current prompt, regenerate code with updated model
+        if (currentPrompt && currentPrompt.trim() !== '') {
+            logMessage("Regenerating code with updated model...", "model");
+            // Wait a moment before regenerating
+            setTimeout(() => {
+                document.getElementById('generate-btn').click();
+            }, 1000);
+        }
+    });
+}
+        
+        // Convert TensorFlow.js model weights to Flower format
+        function getModelWeights(model) {
+            return model.weights.map(w => {
+                // Get the values as a Float32Array
+                const tensorValues = w.val.dataSync();
+                // Convert to regular array for serialization
+                return Array.from(tensorValues);
+            });
+        }
+        
+        // Set model weights from Flower format
+        function setModelWeights(model, weights) {
+            // Skip if weights array is empty (happens on first round)
+            if (!weights || weights.length === 0) {
+                logMessage("Received empty weights, skipping", "info");
+                return;
+            }
+            
+            try {
+                // Check if TensorFlow.js is loaded
+                if (typeof tf === 'undefined') {
+                    throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
+                }
+                
+                // Zip weights with model weights for easier handling
+                const weightPairs = model.weights.map((w, i) => {
+                    return { weight: w, values: weights[i] };
+                });
+                
+                // Set each weight tensor
+                weightPairs.forEach(pair => {
+                    const tensor = tf.tensor(pair.values, pair.weight.val.shape);
+                    pair.weight.val.assign(tensor);
+                });
+                
+                logMessage("Updated model with weights from server", "success");
+            } catch (e) {
+                logMessage(`Error setting weights: ${e.message}`, "error");
+            }
+        }
+        
+        // Main function to initialize the client with optimized loading time and error handling
+        async function initFlowerClient() {
+            // Cache DOM elements for better performance
+            const elements = {
+                status: document.getElementById('status'),
+                clientId: document.getElementById('client-id'),
+                generateBtn: document.getElementById('generate-btn'),
+                editBtn: document.getElementById('edit-btn'),
+                improveBtn: document.getElementById('improve-btn'),
+                promptInput: document.getElementById('prompt-input'),
+                outputCode: document.getElementById('output-code'),
+                outputContainer: document.getElementById('output-container'),
+                loading: document.getElementById('loading')
+            };
+            
+            const clientId = getClientId() || "Unknown";
+            
+            // Display client ID
+            elements.clientId.textContent = `#${clientId}`;
+            elements.status.textContent = "Initializing...";
+            
+            try {
+                // Start model loading in background immediately
+                startModelLoading();
+                
+                // Start loading libraries in parallel with shorter timeout
+                const flowerPromise = checkFlowerLoaded();
+                
+                // Check if TensorFlow.js is loaded
+                const tfPromise = new Promise((resolve, reject) => {
+                    if (typeof tf !== 'undefined') {
+                        // TensorFlow is already available
+                        logMessage("TensorFlow.js already loaded", "info");
+                        tf.ready().then(resolve);
+                    } else {
+                        // Wait for TensorFlow to load
+                        logMessage("Waiting for TensorFlow.js to load...", "info");
+                        const checkInterval = setInterval(() => {
+                            if (typeof tf !== 'undefined') {
+                                clearInterval(checkInterval);
+                                clearTimeout(timeoutId);
+                                logMessage("TensorFlow.js loaded successfully", "success");
+                                tf.ready().then(resolve);
+                            }
+                        }, 100);
+                        
+                        // Set a timeout to reject if it takes too long
+                        const timeoutId = setTimeout(() => {
+                            clearInterval(checkInterval);
+                            reject(new Error("Timeout waiting for TensorFlow.js to load"));
+                        }, 10000); // 10 second timeout
+                    }
+                });
+                
+                // Wait for both libraries to load with timeout
+                const librariesPromise = Promise.all([flowerPromise, tfPromise]);
+                await Promise.race([
+                    librariesPromise,
+                    new Promise((_, reject) => setTimeout(() => reject(new Error("Libraries loading timeout")), 8000))
+                ]);
+                
+                logMessage("Libraries loaded successfully", "success");
+                elements.status.textContent = "Libraries loaded. Loading model...";
+                
+                // Continue with model loading that was started in background
+                const modelPromise = loadCodeModel();
+                
+                // Store training data
+                let currentPrompt = "";
+                let currentGeneratedCode = "";
+                let currentEditedCode = "";
+                let originalGeneratedCode = ""; // Add missing variable declaration
+                
+                // Implement a full Flower client with TensorFlow.js integration
+                class MyFlowerClient extends fl.client.Client {
+                    constructor(model) {
+                        super();
+                        this.model = model;
+                    }
+                    
+                    getWeights() {
+                        logMessage("Getting model weights", "info");
+                        return getModelWeights(this.model);
+                    }
+                    
+                    setWeights(weights) {
+                        logMessage("Setting model weights from server", "info");
+                        setModelWeights(this.model, weights);
+                    }
+                    
+                    async fit(parameters, config) {
+                        logMessage("Fit called by server", "info");
+                        
+                        // Check for synthetic data in config
+                        if (config && config.synthetic_data) {
+                            logMessage(`Received synthetic data: ${config.synthetic_data}`, "success");
+                            // Display the teacher advice in the dashboard
+                            const teacherAdviceElement = document.getElementById('teacher-advice');
+                            if (teacherAdviceElement) {
+                                teacherAdviceElement.textContent = config.synthetic_data;
+                            }
+                        }
+                        
+                        // Set weights received from the server
+                        this.setWeights(parameters);
+                        
+                        // Skip training if we don't have user feedback data
+                        if (!currentPrompt || !currentEditedCode) {
+                            logMessage("No training data available, skipping training", "info");
+                            
+                            // Request the latest global preference even if we skip training
+                            if (window.socket && window.socket.connected) {
+                                window.socket.emit('get_global_preference', { client_id: getClientId() });
+                                logMessage("Requested latest global preference", "info");
+                            }
+                            
+                            return {
+                                parameters: this.getWeights(),
+                                num_examples: 0,
+                                status: { message: "OK" }
+                            };
+                        }
+                        
+                        logMessage("Training on user feedback...", "info");
+                        
+                        // Compare the line count of original vs edited code
+                        const originalLineCount = currentGeneratedCode.split('\n').length;
+                        const editedLineCount = currentEditedCode.split('\n').length;
+                        
+                        // Determine preference: 1 for longer code, -1 for shorter code
+                        let preferenceValue = 0;
+                        if (editedLineCount > originalLineCount) {
+                            preferenceValue = 1;  // User prefers longer, more verbose code
+                            logMessage("User made code longer - training model to prefer verbose code", "info");
+                        } else if (editedLineCount < originalLineCount) {
+                            preferenceValue = -1; // User prefers shorter, more concise code
+                            logMessage("User made code shorter - training model to prefer concise code", "info");
+                        } else {
+                            // Code length unchanged, but content might have changed
+                            // For simplicity, we'll use a small positive value
+                            preferenceValue = 0.1;
+                            logMessage("Code length unchanged - applying small preference update", "info");
+                        }
+                        
+                        // Create training tensors for our simple preference model
+                        const inputTensor = tf.tensor2d([[1]], [1, 1]);  // Input is always 1
+                        const targetTensor = tf.tensor2d([[preferenceValue]], [1, 1]);
+                        
+                        // Get training config
+                        const epochs = config.epochs || 1;
+                        const batchSize = config.batch_size || 1;
+                        
+                        logMessage(`Training for ${epochs} epochs with preference value ${preferenceValue}`, "info");
+                        
+                        // Train the model
+                        const result = await this.model.fit(inputTensor, targetTensor, {
+                            epochs: epochs,
+                            batchSize: batchSize,
+                            callbacks: {
+                                onEpochEnd: (epoch, logs) => {
+                                    logMessage(`Epoch ${epoch + 1}: loss=${logs.loss.toFixed(4)}`, "info");
+                                }
+                            }
+                        });
+                        
+                        logMessage(`Training complete. Final loss: ${result.history.loss.slice(-1)[0].toFixed(4)}`, "success");
+                        
+                        // Clean up tensors
+                        inputTensor.dispose();
+                        targetTensor.dispose();
+                        
+                        // Reset training data
+                        currentPrompt = "";
+                        currentGeneratedCode = "";
+                        currentEditedCode = "";
+                        
+                        // Get updated weights to send back to server
+                        const updatedWeights = this.getWeights();
+                        
+                        // Display the current preference in the dashboard
+                        const preferenceDisplay = document.getElementById('preference-display');
+                        if (preferenceDisplay) {
+                            // Get the current weight value
+                            const currentWeight = this.model.layers[0].getWeights()[0].dataSync()[0];
+                            let preferenceText = "Neutral";
+                            
+                            if (currentWeight > 0.5) {
+                                preferenceText = "Verbose Code";
+                            } else if (currentWeight < -0.5) {
+                                preferenceText = "Concise Code";
+                            }
+                            
+                            preferenceDisplay.textContent = preferenceText;
+                            logMessage(`Updated team preference display: ${preferenceText}`, "info");
+                        }
+                        
+                        // Request the latest global preference after completing a round
+                        if (window.socket && window.socket.connected) {
+                            window.socket.emit('get_global_preference', { client_id: getClientId() });
+                            logMessage("Requested latest global preference", "info");
+                        }
+                        
+                        return {
+                            parameters: updatedWeights,
+                            num_examples: 1, // We trained on one example
+                            status: { message: "OK" }
+                        };
+                    }
+                    
+                    async evaluate(parameters, config) {
+                        logMessage("Evaluate called by server", "info");
+                        
+                        // Set weights received from the server
+                        this.setWeights(parameters);
+                        
+                        // In a real implementation, you would evaluate on a validation set
+                        // For this demo, we'll return a fixed loss value
+                        
+                        logMessage("Evaluation complete", "success");
+                        
+                        return {
+                            loss: 0.1,
+                            num_examples: 1,
+                            status: { message: "OK" }
+                        };
+                    }
+                }
+
+                // Wait for model to finish loading
+                const model = await modelPromise;
+                elements.status.textContent = "Model loaded. Attempting to connect...";
+                
+                // Create client instance with our model
+                const client = new MyFlowerClient(model);
+                
+                // Set up UI event handlers with optimized performance
+                elements.generateBtn.addEventListener('click', async () => {
+                    const prompt = elements.promptInput.value.trim();
+                    if (!prompt) {
+                        logMessage("Please enter a code request", "error");
+                        return;
+                    }
+                    
+                    logMessage(`Sending prompt to server: ${prompt}`, "info");
+                    elements.generateBtn.disabled = true;
+                    elements.generateBtn.textContent = "Generating...";
+                    
+                    // Show loading indicator
+                    showLoading(true);
+                    
+                    try {
+                        // Use setTimeout to allow UI to update before processing
+                        await new Promise(resolve => setTimeout(resolve, 50));
+                        
+                        // Request code generation from the server
+                        const code = await requestCodeGeneration(prompt);
+                        
+                        // Display the generated code
+                        elements.outputCode.textContent = code;
+                        elements.outputContainer.classList.remove('hidden');
+                        
+                        // Store the current prompt and generated code
+                        currentPrompt = prompt;
+                        currentGeneratedCode = code;
+                        originalGeneratedCode = code; // Store original code for comparison
+                        
+                        logMessage("Code received and displayed successfully", "success");
+                    } catch (error) {
+                        console.error("Generation error:", error);
+                        logMessage(`Error generating code: ${error.message}`, "error");
+                        elements.outputCode.textContent = "# Error generating code\n# Please try again with a different prompt";
+                        elements.outputContainer.classList.remove('hidden');
+                    } finally {
+                        elements.generateBtn.disabled = false;
+                        elements.generateBtn.textContent = "Generate Code";
+                        // Hide loading indicator
+                        showLoading(false);
+                    }
+                });
+                
+                elements.editBtn.addEventListener('click', () => {
+                    // Make the code editable
+                    elements.outputCode.contentEditable = "true";
+                    elements.outputCode.focus();
+                    
+                    // Show the improve button
+                    elements.improveBtn.classList.remove('hidden');
+                    elements.editBtn.classList.add('hidden');
+                    
+                    logMessage("You can now edit the code. Click 'Submit Improvement' when done.", "info");
+                });
+                
+                elements.improveBtn.addEventListener('click', () => {
+                    // Get the edited code
+                    currentEditedCode = elements.outputCode.textContent;
+                    
+                    // Make the code non-editable again
+                    elements.outputCode.contentEditable = "false";
+                    
+                    // Hide the improve button, show edit button
+                    elements.improveBtn.classList.add('hidden');
+                    elements.editBtn.classList.remove('hidden');
+                    
+                    // Submit the improvement to the server
+                    function submitImprovement(original, edited, prompt) {
+                         if (window.socket && window.socket.connected) {
+                             // Log detailed information about the improvement being submitted
+                             console.group('Submitting Code Improvement');
+                             console.log('Original code length:', original.length);
+                             console.log('Edited code length:', edited.length);
+                             console.log('Prompt:', prompt);
+                             
+                             // Calculate basic metrics
+                             const originalLines = original.split('\n').length;
+                             const editedLines = edited.split('\n').length;
+                             const lineDiff = editedLines - originalLines;
+                             console.log('Line difference:', lineDiff);
+                             
+                             // Check for comment changes
+                             const originalComments = (original.match(/#/g) || []).length;
+                             const editedComments = (edited.match(/#/g) || []).length;
+                             const commentDiff = editedComments - originalComments;
+                             console.log('Comment difference:', commentDiff);
+                             console.groupEnd();
+                             
+                             // Send the improvement to the server
+                             window.socket.emit('submit_improvement', {
+                                 client_id: getClientId(),
+                                 original_code: original,
+                                 edited_code: edited,
+                                 prompt: prompt
+                             });
+                             
+                             logMessage("Sent code improvement to server", "preference");
+                             logMessage(`Changes: ${lineDiff} lines, ${commentDiff} comments`, "preference");
+                         } else {
+                             logMessage("Socket connection not available", "error");
+                         }
+                     }
+                    
+                    submitImprovement(originalGeneratedCode, currentEditedCode, currentPrompt);
+                    
+                    logMessage("Improvement submitted. Your preferences are being learned.", "success");
+                    
+                    // In a real implementation, you might want to trigger training immediately
+                    // For this demo, we'll wait for the server to call fit
+                });
+                
+                // Start the connection with improved timeout handling
+                logMessage("Connecting to Flower server...", "info");
+                
+                // Set up connection with retry logic
+                const connectWithRetry = async (retries = 3, delay = 2000) => {
+                    for (let attempt = 1; attempt <= retries; attempt++) {
+                        try {
+                            logMessage(`Connection attempt ${attempt}/${retries}`, "info");
+                            return await fl.client.startClient("http://localhost:8080", client);
+                        } catch (err) {
+                            if (attempt === retries) throw err;
+                            logMessage(`Connection failed, retrying in ${delay/1000}s...`, "error");
+                            await new Promise(resolve => setTimeout(resolve, delay));
+                        }
+                    }
+                };
+                
+                // Race the connection against timeout
+                const connectionPromise = connectWithRetry();
+                const timeoutPromise = new Promise((_, reject) => {
+                    setTimeout(() => reject(new Error("Connection timeout after 15 seconds")), 15000);
+                });
+                
+                await Promise.race([connectionPromise, timeoutPromise]);
+                
+                elements.status.textContent = "SUCCESS: Connected to server!";
+                logMessage("Flower client connected successfully!", "success");
+                
+            } catch (e) {
+                // Handle specific error types
+                if (e.message.includes("timeout")) {
+                    elements.status.textContent = "ERROR: Server connection timeout";
+                    logMessage("Could not connect to server - please check if server is running", "error");
+                } else if (e.name === "NetworkError" || e.message.includes("network")) {
+                    elements.status.textContent = "ERROR: Network connection failed";
+                    logMessage("Network error - please check your connection", "error");
+                } else {
+                    elements.status.textContent = `ERROR: ${e.message}`;
+                    logMessage(`Error starting Flower client: ${e.message}`, "error");
+                }
+                console.error("Initialization error:", e);
+            }
+        }
+        
+        // Set up Call Teacher button functionality
+        document.getElementById('call-teacher-btn').addEventListener('click', function() {
+            logMessage("Requesting teacher advice...", "info");
+            if (window.socket) {
+                window.socket.emit('call_teacher', { client_id: getClientId() });
+            } else {
+                logMessage("Socket connection not available", "error");
+            }
+        });
+                
+                // Start the initialization process
+        initFlowerClient();
+    </script>
+</body>
+
+</html>

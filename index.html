@@ -8,449 +8,622 @@
     <title>Privacy-Preserving Code Assistant</title>
     <!-- Load Socket.IO first -->
     <script src="https://cdn.socket.io/4.6.0/socket.io.min.js"></script>
-    
+
     <!-- Load TensorFlow.js with async to prevent blocking page load -->
     <script async src="https://cdn.jsdelivr.net/npm/@tensorflow/tfjs@4.17.0/dist/tf.min.js"></script>
-    
+
     <!-- TensorFlow.js Hub removed due to ORB blocking issues -->
-    
+
     <!-- Load local Flower library with async to prevent blocking page load -->
     <script async src="flower-client-browser.js"></script>
-    
+
     <!-- Add Pico.css for better styling -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/@picocss/pico@2/css/pico.min.css">
-    
+
     <!-- Add loading indicator -->
     <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/spinkit@2.0.1/spinkit.min.css">
-    
+
     <!-- Add Google Fonts -->
-    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap">
-    
+    <link rel="stylesheet"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800;900&family=JetBrains+Mono:wght@400;500;600;700&display=swap">
+
     <style>
+        /* Simplified professional color scheme and variables */
         :root {
-            --primary-color: #4361ee;
-            --primary-hover: #3a56d4;
-            --secondary-color: #3a0ca3;
-            --success-color: #4CAF50;
-            --background-color: #f8f9fa;
-            --code-bg-color: #f5f5f5;
-            --text-color: #333;
-            --border-radius: 12px;
-            --shadow-sm: 0 2px 8px rgba(0,0,0,0.05);
-            --shadow-md: 0 4px 12px rgba(0,0,0,0.08);
-            --shadow-lg: 0 8px 24px rgba(0,0,0,0.12);
-            --transition: all 0.3s ease;
+            --primary-color: #2563eb;
+            --secondary-color: #64748b;
+            --accent-color: #0ea5e9;
+            --background: #f5f5f7; /* Changed to a grey-toned off-white */
+            --surface-primary: #f8f8fa;
+            --surface-secondary: #f1f1f5;
+            --surface-tertiary: #e2e2e8;
+            --text-primary: #1e293b;
+            --text-secondary: #64748b;
+            --text-muted: #94a3b8;
+            --border-color: #cbd5e1;
+            --success-color: #10b981;
+            --warning-color: #f59e0b;
+            --error-color: #ef4444;
+
+            /* Reduced spacing and sizing */
+            --spacing-xs: 0.25rem;
+            --spacing-sm: 0.5rem;
+            --spacing-md: 0.75rem;
+            --spacing-lg: 1rem;
+            --spacing-xl: 1.5rem;
+            --spacing-2xl: 2rem;
+
+            --radius-sm: 4px;
+            --radius-md: 6px;
+            --radius-lg: 8px;
+
+            /* Simplified shadows */
+            --shadow-sm: 0 1px 2px 0 rgba(0, 0, 0, 0.05);
+            --shadow-md: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1);
+
+            --transition-fast: all 0.15s ease;
+            --transition-normal: all 0.2s ease;
         }
-        
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+
+        /* Professional font stack and smaller base font size */
         body {
-              max-width: 900px;
-              margin: 0 auto;
-              padding: 2rem;
-              font-family: 'Inter', 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
-              line-height: 1.6;
-              color: var(--text-color);
-              background: linear-gradient(135deg, #f5f7fa 0%, #e4e8f0 100%);
-              min-height: 100vh;
-              /* Fix for scrolling issues when dev tools are open */
-              position: relative;
-              overflow-y: auto !important;
-              height: 100% !important;
-              display: flex;
-              flex-direction: column;
-          }
-        
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-primary);
+            background: var(--background);
+            min-height: 100vh;
+            display: flex;
+            flex-direction: column;
+        }
+
+        /* Simplified header with smaller fonts and better visibility */
         header {
-             margin-bottom: 2rem;
-             text-align: center;
-         }
-         
-         h1 {
-             color: #2c3e50;
-             font-weight: 700;
-             letter-spacing: -0.5px;
-         }
-        
+            background: var(--surface-primary);
+            border-bottom: 1px solid var(--border-color);
+            padding: var(--spacing-lg) var(--spacing-xl);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+        }
+
+        header h2 {
+            font-size: 18px;
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-sm);
+        }
+
+        header p {
+            font-size: 13px;
+            color: var(--text-secondary);
+        }
+
+        /* Simplified typography with smaller sizes */
+        h1,
+        h2,
+        h3,
+        h4,
+        h5,
+        h6 {
+            font-weight: 600;
+            color: var(--text-primary);
+            margin-bottom: var(--spacing-md);
+            line-height: 1.3;
+        }
+
+        h1 {
+            font-size: 24px;
+        }
+
         h2 {
-             font-weight: 600;
-             letter-spacing: -0.3px;
-             color: #2c3e50;
-         }
-         
-         h3 {
-             font-weight: 500;
-             letter-spacing: -0.2px;
-             color: #2c3e50;
-         }
-        
-        .log {
-            background-color: rgba(245, 245, 245, 0.7);
-            border: 1px solid rgba(255, 255, 255, 0.2);
-            padding: 15px;
-            margin-top: 20px;
-            height: 250px;
-            overflow-y: auto;
-            font-family: monospace;
-            border-radius: var(--border-radius);
-            box-shadow: var(--shadow-sm);
-            backdrop-filter: blur(10px);
-            transition: var(--transition);
+            font-size: 18px;
         }
-        
-        .success { color: var(--success-color); }
-        .error { color: red; }
-        .info { color: var(--primary-color); }
-        .preference { color: purple; }
-        .model { color: blue; }
-        .warning { color: orange; }
-        
-        .log-entry {
-            margin-bottom: 8px;
-            padding: 8px 10px;
-            border-radius: 6px;
-            transition: var(--transition);
-            border-left: 3px solid transparent;
+
+        h3 {
+            font-size: 16px;
         }
-        
-        .log-entry.success {
-            background-color: rgba(76, 175, 80, 0.1);
-            border-left-color: var(--success-color);
+
+        p {
+            font-size: 14px;
+            line-height: 1.5;
+            color: var(--text-secondary);
+            margin-bottom: var(--spacing-md);
         }
-        
-        .log-entry.error {
-            background-color: rgba(244, 67, 54, 0.1);
-            border-left-color: red;
+
+        /* Clean main layout */
+        main {
+            flex: 1;
+            padding: var(--spacing-xl);
+            display: grid;
+            grid-template-columns: 3fr 1fr; /* Adjusted ratio to give more space to left column */
+            gap: var(--spacing-xl);
+            max-width: 1400px;
+            margin: 0 auto;
+            width: 100%;
+            min-height: 0; /* Needed for proper scrolling */
         }
-        
-        .log-entry.info {
-            background-color: rgba(33, 150, 243, 0.1);
-            border-left-color: var(--primary-color);
+
+        /* Added left column for main content */
+        .left-column {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-xl);
+            min-height: 0; /* Needed for proper scrolling */
+            overflow: hidden; /* Prevent overflow */
         }
-        
-        .log-entry.preference {
-            background-color: rgba(156, 39, 176, 0.1);
-            border-left-color: purple;
+
+        /* Added right column for logs */
+        .right-column {
+            display: flex;
+            flex-direction: column;
+            gap: var(--spacing-lg);
+            min-height: 0; /* Needed for proper scrolling */
+            overflow: hidden; /* Prevent overflow */
         }
-        
-        .log-entry.model {
-            background-color: rgba(33, 150, 243, 0.1);
-            border-left-color: blue;
+
+        /* Simplified article styling */
+        article {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-xl);
+            transition: var(--transition-normal);
         }
-        
-        .log-entry.warning {
-            background-color: rgba(255, 152, 0, 0.1);
-            border-left-color: orange;
-        }
-        
-        .log-entry:hover {
-            transform: translateX(2px);
-            box-shadow: var(--shadow-sm);
-        }
-        
-        #output-code {
-            background-color: rgba(40, 44, 52, 0.85);
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            padding: 20px;
-            border-radius: var(--border-radius);
-            white-space: pre-wrap;
-            font-family: 'Fira Code', 'Courier New', monospace;
-            min-height: 250px;
-            margin-bottom: 20px;
+
+        article:hover {
             box-shadow: var(--shadow-md);
-            transition: var(--transition);
-            backdrop-filter: blur(10px);
-            color: #e6e6e6;
+            border-color: var(--primary-color);
         }
-        
-        .hidden {
-            display: none;
+
+        /* Fixed width text areas with scrolling */
+        textarea {
+            width: 100%;
+            max-width: 100%;
+            min-height: 120px;
+            max-height: 200px;
+            padding: var(--spacing-md);
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            color: var(--text-primary);
+            font-family: inherit;
+            font-size: 13px;
+            line-height: 1.4;
+            resize: vertical;
+            transition: var(--transition-normal);
+            margin-bottom: var(--spacing-lg);
+            overflow-y: auto;
+            box-sizing: border-box;
+            flex-shrink: 0; /* Prevent textarea from shrinking */
         }
-        
-        .client-badge {
-            display: inline-block;
-            padding: 5px 10px;
-            border-radius: 16px;
-            background-color: var(--primary-color);
-            color: white;
-            font-size: 0.8rem;
-            margin-left: 10px;
-            box-shadow: var(--shadow-sm);
-            font-weight: 500;
+
+        textarea:focus {
+            outline: none;
+            border-color: var(--primary-color);
+            box-shadow: 0 0 0 3px rgba(37, 99, 235, 0.1);
         }
-        
+
+        /* Professional button styling */
         button {
-            transition: var(--transition);
-            border-radius: var(--border-radius);
+            background: var(--primary-color);
+            color: white;
+            border: none;
+            border-radius: var(--radius-md);
+            padding: var(--spacing-md) var(--spacing-lg);
+            font-size: 13px;
             font-weight: 500;
-            padding: 0.75rem 1.25rem;
+            cursor: pointer;
+            transition: var(--transition-normal);
             display: inline-flex;
             align-items: center;
-            justify-content: center;
-            gap: 0.5rem;
-            box-shadow: var(--shadow-sm);
+            gap: var(--spacing-sm);
         }
-        
+
         button:hover {
-            transform: translateY(-2px);
+            background: #1d4ed8;
+            transform: translateY(-1px);
             box-shadow: var(--shadow-md);
-            background-color: var(--primary-hover);
         }
-        
+
         button:active {
             transform: translateY(0);
-            box-shadow: var(--shadow-sm);
         }
-        
-        /* Loading indicator */
-        .loading-container {
-            display: none;
-            justify-content: center;
+
+        button:disabled {
+            background: var(--text-muted);
+            cursor: not-allowed;
+            transform: none;
+        }
+
+        /* Secondary button variant */
+        button.secondary {
+            background: var(--surface-secondary);
+            color: var(--text-primary);
+            border: 1px solid var(--border-color);
+        }
+
+        button.secondary:hover {
+            background: var(--surface-tertiary);
+            border-color: var(--primary-color);
+        }
+
+        /* Clean dashboard styling */
+        #demo-dashboard {
+            grid-column: 1 / -1;
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-lg);
+            padding: var(--spacing-xl);
+            margin-top: var(--spacing-xl);
+        }
+
+        .dashboard-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr));
+            gap: var(--spacing-lg);
+            margin-top: var(--spacing-lg);
+        }
+
+        .dashboard-card {
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+        }
+
+        .dashboard-card h3 {
+            font-size: 15px;
+            margin-bottom: var(--spacing-md);
+        }
+
+        /* Clean status indicators */
+        .status-indicator {
+            display: inline-flex;
             align-items: center;
-            margin: 30px 0;
-            cursor: default;
+            gap: var(--spacing-sm);
+            font-size: 13px;
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            background: var(--surface-secondary);
         }
-        
-        .loading-container.active {
-            display: flex;
-        }
-        
-        .spinner {
-            width: 40px;
-            height: 40px;
-            margin: 0 auto;
-        }
-        
-        /* Dashboard Styling */
-           #demo-dashboard {
-               margin-top: 40px;
-               padding: 30px;
-               background-color: rgba(248, 249, 250, 0.7);
-               border-radius: var(--border-radius);
-               box-shadow: var(--shadow-md);
-               backdrop-filter: blur(10px);
-               border: 1px solid rgba(255, 255, 255, 0.2);
-               transition: var(--transition);
-           }
-           
-           #demo-dashboard h2, #demo-dashboard h3 {
-               color: #2c3e50;
-               font-weight: 600;
-           }
-          
-          #demo-dashboard:hover {
-              box-shadow: var(--shadow-lg);
-          }
-          
-          .dashboard-section {
-              margin-bottom: 25px;
-              padding: 20px;
-              background-color: rgba(255, 255, 255, 0.7);
-              border-radius: var(--border-radius);
-              border: 1px solid rgba(0,0,0,0.05);
-              box-shadow: var(--shadow-sm);
-              transition: var(--transition);
-          }
-          
-          .dashboard-section:hover {
-              box-shadow: var(--shadow-md);
-              transform: translateY(-2px);
-          }
-          
-          #preference-display, #teacher-advice {
-              padding: 15px;
-              background-color: rgba(245, 245, 245, 0.7);
-              border-radius: var(--border-radius);
-              margin-top: 15px;
-              font-family: 'Fira Code', 'Courier New', monospace;
-              min-height: 30px;
-              box-shadow: var(--shadow-sm) inset;
-              backdrop-filter: blur(5px);
-              border: 1px solid rgba(255, 255, 255, 0.1);
-              transition: var(--transition);
-          }
-          
-          #preference-display:hover, #teacher-advice:hover {
-              background-color: rgba(245, 245, 245, 0.85);
-          }
-        
-        .expert-controls {
-            display: flex;
-            align-items: center;
-            justify-content: space-between;
-            margin-bottom: 15px;
-        }
-        
-        #call-teacher-btn {
-            margin-bottom: 0;
-        }
-        
-        .update-indicator {
-            display: flex;
-            align-items: center;
-            padding: 5px 10px;
-            background-color: rgba(245, 245, 245, 0.7);
-            border-radius: 20px;
-            font-size: 0.9rem;
-            box-shadow: var(--shadow-sm);
-        }
-        
+
         .indicator-dot {
-            width: 10px;
-            height: 10px;
-            border-radius: 50%;
-            background-color: #4CAF50;
-            margin-right: 8px;
-            transition: background-color 0.5s ease;
-        }
-        
-        .indicator-dot.updating {
-            background-color: #FFC107;
-            animation: pulse 1.5s infinite;
-        }
-        
-        @keyframes pulse {
-            0% { opacity: 0.5; }
-            50% { opacity: 1; }
-            100% { opacity: 0.5; }
-        }
-        
-        .teacher-container {
-            margin-top: 15px;
-        }
-        
-        #teacher-advice-container {
-            background-color: rgba(245, 245, 245, 0.7);
-            border-radius: var(--border-radius);
-            padding: 15px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-family: 'Fira Code', 'Courier New', monospace;
-            box-shadow: var(--shadow-sm) inset;
-            border: 1px solid rgba(255, 255, 255, 0.1);
-            transition: var(--transition);
-            white-space: pre-wrap;
-        }
-        
-        .timestamp {
-            font-size: 0.8rem;
-            color: #666;
-            margin-top: 5px;
-            text-align: right;
-            font-style: italic;
-        }
-        
-        /* Custom scrollbar */
-        ::-webkit-scrollbar {
             width: 8px;
             height: 8px;
+            border-radius: 50%;
+            background-color: var(--text-muted);
         }
-        
-        ::-webkit-scrollbar-track {
-            background: rgba(0, 0, 0, 0.05);
-            border-radius: 10px;
+
+        .indicator-dot.connected {
+            background-color: var(--success-color);
         }
-        
-        ::-webkit-scrollbar-thumb {
-            background: rgba(0, 0, 0, 0.2);
-            border-radius: 10px;
+
+        .indicator-dot.updating {
+            background-color: var(--warning-color);
         }
-        
-        ::-webkit-scrollbar-thumb:hover {
-            background: rgba(0, 0, 0, 0.3);
+
+        /* Clean client badge */
+        .client-badge {
+            background: var(--surface-secondary);
+            color: var(--text-secondary);
+            padding: var(--spacing-xs) var(--spacing-sm);
+            border-radius: var(--radius-sm);
+            font-size: 11px;
+            font-weight: 500;
+        }
+
+        /* Simplified teacher container */
+        .teacher-container {
+            margin-top: var(--spacing-lg);
+            padding: var(--spacing-lg);
+            background: var(--surface-secondary);
+            border-radius: var(--radius-md);
+            border-left: 3px solid var(--primary-color);
+        }
+
+        .teacher-container h3 {
+            font-size: 14px;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        .teacher-container p {
+            font-size: 13px;
+            margin-bottom: var(--spacing-sm);
+        }
+
+        /* Clean footer */
+        footer {
+            background: var(--surface-primary);
+            border-top: 1px solid var(--border-color);
+            padding: var(--spacing-lg) var(--spacing-xl);
+            text-align: center;
+        }
+
+        footer p {
+            font-size: 12px;
+            color: var(--text-muted);
+        }
+
+        /* Responsive design */
+        @media (max-width: 768px) {
+            main {
+                grid-template-columns: 1fr;
+                padding: var(--spacing-lg);
+            }
+
+            header {
+                padding: var(--spacing-md) var(--spacing-lg);
+            }
+
+            article {
+                padding: var(--spacing-lg);
+            }
+        }
+
+        /* Remove all flashy animations and effects */
+        * {
+            animation: none !important;
+        }
+
+        /* Added dashboard section styling with better spacing */
+        .dashboard-section {
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+            margin-bottom: var(--spacing-lg);
+        }
+
+        .dashboard-section h3 {
+            margin: 0 0 var(--spacing-md) 0;
+            font-size: 16px;
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        .dashboard-section h4 {
+            margin: 0 0 var(--spacing-sm) 0;
+            font-size: 14px;
+            font-weight: 500;
+            color: var(--text-secondary);
+        }
+
+        /* Update indicator box styling */
+        .update-box {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: var(--spacing-md);
+            margin: var(--spacing-sm) 0;
+        }
+
+        /* Enhanced Expert Consultant Output styling */
+        #teacher-advice-container {
+            background: var(--background);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+            margin-top: var(--spacing-md);
+            max-height: 400px;
+            overflow-y: auto;
+        }
+
+        #teacher-advice {
+            font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+            font-size: 14px;
+            line-height: 1.6;
+            color: var(--text-primary);
+        }
+
+        /* Style markdown-like content in expert output */
+        #teacher-advice h1,
+        #teacher-advice h2,
+        #teacher-advice h3 {
+            color: var(--primary-color);
+            margin: var(--spacing-lg) 0 var(--spacing-md) 0;
+            font-weight: 600;
+        }
+
+        #teacher-advice h1 {
+            font-size: 18px;
+        }
+
+        #teacher-advice h2 {
+            font-size: 16px;
+        }
+
+        #teacher-advice h3 {
+            font-size: 14px;
+        }
+
+        #teacher-advice code {
+            background: var(--surface-secondary);
+            padding: 2px 6px;
+            border-radius: 4px;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        #teacher-advice pre {
+            background: var(--surface-secondary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-sm);
+            padding: var(--spacing-md);
+            margin: var(--spacing-md) 0;
+            overflow-x: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+        }
+
+        #teacher-advice ul,
+        #teacher-advice ol {
+            margin: var(--spacing-md) 0;
+            padding-left: var(--spacing-lg);
+        }
+
+        #teacher-advice li {
+            margin: var(--spacing-xs) 0;
+        }
+
+        #teacher-advice strong {
+            font-weight: 600;
+            color: var(--text-primary);
+        }
+
+        /* Log styling for right column */
+        .log {
+            background: var(--surface-primary);
+            border: 1px solid var(--border-color);
+            border-radius: var(--radius-md);
+            padding: var(--spacing-lg);
+            height: 500px; /* Increased height */
+            overflow-y: auto;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 12px;
+            line-height: 1.4;
+            flex: 1; /* Allow log to take available space */
+            min-height: 0; /* Needed for proper scrolling */
+            word-break: break-word; /* Prevent horizontal overflow */
+        }
+
+        .log div {
+            margin-bottom: var(--spacing-xs);
+            padding: var(--spacing-xs);
+            border-radius: var(--radius-xs);
+        }
+
+        .log .error {
+            background: rgba(239, 68, 68, 0.1);
+            color: #ef4444;
+        }
+
+        .log .success {
+            background: rgba(34, 197, 94, 0.1);
+            color: #22c55e;
+        }
+
+        .log .warning {
+            background: rgba(245, 158, 11, 0.1);
+            color: #f59e0b;
         }
     </style>
 </head>
 
 <body>
     <header>
+        <!-- Simplified header content -->
         <h2>Privacy-Preserving Code Assistant <span id="client-id" class="client-badge"></span></h2>
         <p>Status: <span id="status">Starting...</span></p>
     </header>
-    
+
     <main>
-        <article>
-            <h2>Generate Python Code</h2>
-            <textarea id="prompt-input" rows="4" placeholder="Enter your code request..."></textarea>
-            <button id="generate-btn" class="primary">
-                <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
-                    <path d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z" fill="currentColor"></path>
-                </svg>
-                Generate Code
-            </button>
-            
-            <!-- Loading indicator -->
-            <div class="loading-container" id="loading">
-                <div class="spinner sk-chase">
-                    <div class="sk-chase-dot"></div>
-                    <div class="sk-chase-dot"></div>
-                    <div class="sk-chase-dot"></div>
-                    <div class="sk-chase-dot"></div>
-                    <div class="sk-chase-dot"></div>
-                    <div class="sk-chase-dot"></div>
+        <div class="left-column">
+            <article>
+                <h2>Generate Python Code</h2>
+                <textarea id="prompt-input" rows="4" placeholder="Enter your code request..."></textarea>
+                <!-- Removed call icon from generate button -->
+                <button id="generate-btn" class="primary">
+                    <svg class="icon" viewBox="0 0 24 24" width="20" height="20">
+                        <path d="M12 3L14.5 8.5L20 11L14.5 13.5L12 19L9.5 13.5L4 11L9.5 8.5L12 3Z" fill="currentColor">
+                        </path>
+                    </svg>
+                    Generate Code
+                </button>
+
+                <!-- Loading indicator -->
+                <div class="loading-container" id="loading">
+                    <div class="spinner sk-chase">
+                        <div class="sk-chase-dot"></div>
+                        <div class="sk-chase-dot"></div>
+                        <div class="sk-chase-dot"></div>
+                        <div class="sk-chase-dot"></div>
+                        <div class="sk-chase-dot"></div>
+                        <div class="sk-chase-dot"></div>
+                    </div>
+                    <p>Processing your request...</p>
                 </div>
-                <p>Processing your request...</p>
-            </div>
-            
-            <div id="output-container" class="hidden">
-                <h3>Generated Code</h3>
-                <pre><code id="output-code" class="language-python" contenteditable="false"></code></pre>
-                <div id="feedback-controls">
-                    <button id="edit-btn" class="secondary">
-                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
-                            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
-                            <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"></path>
-                        </svg>
-                        Edit Code
-                    </button>
-                    <button id="improve-btn" class="primary hidden">
-                        <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
-                            <path d="M20 6L9 17L4 12" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                        </svg>
-                        Submit Improvement
-                    </button>
+
+                <div id="output-container" class="hidden">
+                    <h3>Generated Code</h3>
+                    <div style="max-height: 400px; overflow-y: auto; border: 1px solid var(--border-color); border-radius: var(--radius-md);">
+                        <pre style="margin: 0; overflow-x: auto;"><code id="output-code" class="language-python" contenteditable="false"></code></pre>
+                    </div>
+                    <div id="feedback-controls" style="margin-top: var(--spacing-md);">
+                        <button id="edit-btn" class="secondary">
+                            <svg class="icon" viewBox="0 0 24 24" width="20" height="20">
+                                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round"
+                                    d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"></path>
+                                <path fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                    stroke-linejoin="round" d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z">
+                                </path>
+                            </svg>
+                            Edit Code
+                        </button>
+                        <button id="improve-btn" class="primary hidden">
+                            <svg class="icon" viewBox="0 0 24 24" width="20" height="20">
+                                <path d="M20 6L9 17L4 12" fill="none" stroke="currentColor" stroke-width="2"
+                                    stroke-linecap="round" stroke-linejoin="round"></path>
+                            </svg>
+                            Submit Improvement
+                        </button>
+                    </div>
                 </div>
-            </div>
-            
-            <!-- Demonstration Dashboard Section -->
-            <div id="demo-dashboard">
+            </article>
+
+            <article>
                 <h2>Demonstration Dashboard</h2>
-                
-                <!-- Federated Learning Section -->
+
+                <!-- Added spacing and boxes for dashboard sections -->
                 <div class="dashboard-section">
-                    <h3>Federated Learning</h3>
-                    <p>Current Team Preference: <div id="preference-display">Neutral</div></p>
+                    <h3>Team Preference</h3>
+                    <div class="update-box">
+                        <p>Current Preference: <span id="preference-display">Neutral</span></p>
+                    </div>
                 </div>
-                
-                <!-- Expert Consultant Section -->
+
                 <div class="dashboard-section">
                     <h3>Expert Consultant</h3>
                     <div class="expert-controls">
-                        <button id="call-teacher-btn">
-                            <svg class="icon" viewBox="0 0 24 24" width="18" height="18">
-                                <path d="M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"></path>
-                            </svg>
-                            Global Update
-                        </button>
-                        <div id="model-update-indicator" class="update-indicator">
-                            <span class="indicator-dot"></span>
-                            <span class="indicator-text">Model Status: Ready</span>
+                        <!-- Removed lightning icon from global update button -->
+                        <button id="call-teacher-btn">Global Update</button>
+                        <div class="update-box">
+                            <div id="model-update-indicator" class="update-indicator">
+                                <span class="indicator-dot"></span>
+                                <span class="indicator-text">Model Status: Ready</span>
+                            </div>
                         </div>
                     </div>
                     <div class="teacher-container">
                         <h4>Expert Consultant Output</h4>
                         <div id="teacher-advice-container">
-                            <div id="teacher-advice">No expert advice available yet. Click "Global Update" to request expert input.</div>
+                            <div id="teacher-advice">No expert advice available yet. Click "Global Update" to request
+                                expert input.</div>
                             <div id="teacher-timestamp" class="timestamp"></div>
                         </div>
                     </div>
                 </div>
-            </div>
-        </article>
+            </article>
+        </div>
+
+        <!-- Moved logs to right column -->
+        <div class="right-column">
+            <article>
+                <h2>Connection Log</h2>
+                <div class="log" id="log"></div>
+            </article>
+        </div>
     </main>
-    
-    <footer>
-        <h3>Connection Log</h3>
-        <div class="log" id="log"></div>
-    </footer>
+
+    <!-- Footer removed to avoid duplicate connection log -->
 
     <!-- Use type="module" to ensure this runs after page load and libraries are available -->
     <script type="module">
@@ -463,7 +636,7 @@
                     resolve();
                     return;
                 }
-                
+
                 // Otherwise, set up a check that runs every 100ms
                 logMessage("Waiting for Flower library to load...", "info");
                 const checkInterval = setInterval(() => {
@@ -473,7 +646,7 @@
                         resolve();
                     }
                 }, 100);
-                
+
                 // Set a timeout to reject if it takes too long
                 setTimeout(() => {
                     clearInterval(checkInterval);
@@ -481,7 +654,7 @@
                 }, 10000); // 10 second timeout
             });
         }
-        
+
         // Function to show/hide loading indicator with performance optimization
         function showLoading(isLoading) {
             const loadingElement = document.getElementById('loading');
@@ -494,56 +667,56 @@
                 }
             });
         }
-        
+
         // Helper function to log messages to console and UI
-function logMessage(message, type = "info") {
-    const clientId = getClientId();
-    const prefix = clientId ? `[Client ${clientId}] ` : "";
-    const timestamp = new Date().toLocaleTimeString();
-    const fullMessage = `[${timestamp}] ${prefix}${message}`;
-    
-    // Log to console with enhanced styling based on message type
-    if (type === "error") {
-        console.error(fullMessage);
-    } else if (type === "success") {
-        console.log("%c" + fullMessage, "color: green; font-weight: bold");
-    } else if (type === "preference") {
-        console.log("%c" + fullMessage, "color: purple; font-weight: bold");
-    } else if (type === "model") {
-        console.log("%c" + fullMessage, "color: blue; font-weight: bold");
-    } else if (type === "warning") {
-        console.warn(fullMessage);
-    } else {
-        console.log(fullMessage);
-    }
-    
-    // Log to UI with performance optimization
-    requestAnimationFrame(() => {
-        const logElement = document.getElementById('log');
-        const entry = document.createElement('div');
-        entry.classList.add(type);
-        entry.textContent = fullMessage;
-        logElement.appendChild(entry);
-        logElement.scrollTop = logElement.scrollHeight;
-    });
-}
-        
+        function logMessage(message, type = "info") {
+            const clientId = getClientId();
+            const prefix = clientId ? `[Client ${clientId}] ` : "";
+            const timestamp = new Date().toLocaleTimeString();
+            const fullMessage = `[${timestamp}] ${prefix}${message}`;
+
+            // Log to console with enhanced styling based on message type
+            if (type === "error") {
+                console.error(fullMessage);
+            } else if (type === "success") {
+                console.log("%c" + fullMessage, "color: green; font-weight: bold");
+            } else if (type === "preference") {
+                console.log("%c" + fullMessage, "color: purple; font-weight: bold");
+            } else if (type === "model") {
+                console.log("%c" + fullMessage, "color: blue; font-weight: bold");
+            } else if (type === "warning") {
+                console.warn(fullMessage);
+            } else {
+                console.log(fullMessage);
+            }
+
+            // Log to UI with performance optimization
+            requestAnimationFrame(() => {
+                const logElement = document.getElementById('log');
+                const entry = document.createElement('div');
+                entry.classList.add(type);
+                entry.textContent = fullMessage;
+                logElement.appendChild(entry);
+                logElement.scrollTop = logElement.scrollHeight;
+            });
+        }
+
         // Get client ID from URL parameter
         function getClientId() {
             const urlParams = new URLSearchParams(window.location.search);
             return urlParams.get('client');
         }
-        
+
         // Load a pre-trained code generation model with optimized lazy loading approach
         let codeModel;
         let modelLoadPromise = null;
         let modelLoadStarted = false;
-        
+
         // Start model loading immediately in the background
         function startModelLoading() {
             if (modelLoadStarted) return;
             modelLoadStarted = true;
-            
+
             // Use setTimeout to defer model loading until after page is interactive
             setTimeout(() => {
                 loadCodeModel().catch(err => {
@@ -552,28 +725,28 @@ function logMessage(message, type = "info") {
                 });
             }, 100);
         }
-        
+
         async function loadCodeModel() {
             // If model is already loaded, return it immediately
             if (codeModel) return codeModel;
-            
+
             // If model is currently loading, return the existing promise
             if (modelLoadPromise) return modelLoadPromise;
-            
+
             // Start loading the model
             modelLoadPromise = (async () => {
                 logMessage("Loading code generation model...", "info");
-                
+
                 try {
                     // Check if TensorFlow.js is loaded
                     if (typeof tf === 'undefined') {
                         throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
                     }
-                    
+
                     // For this demo, we'll use a very simple model for preference learning
                     // This model will learn if users prefer longer or shorter code
                     const model = tf.sequential();
-                    
+
                     // Simple input layer with shape [1] for a single preference value
                     model.add(tf.layers.dense({
                         units: 1,
@@ -581,19 +754,19 @@ function logMessage(message, type = "info") {
                         activation: 'linear',
                         useBias: true
                     }));
-                    
+
                     // Compile with simple settings for preference learning
                     model.compile({
                         optimizer: tf.train.adam(0.01),
                         loss: 'meanSquaredError'
                     });
-                    
+
                     // Initialize with neutral preference
                     // Dense layer expects weights and bias as separate tensors
                     const initialWeights = tf.tensor2d([[0.0]]);
                     const initialBias = tf.tensor1d([0.0]);
                     model.layers[0].setWeights([initialWeights, initialBias]);
-                    
+
                     logMessage("Code generation model created successfully", "success");
                     codeModel = model;
                     return model;
@@ -604,32 +777,32 @@ function logMessage(message, type = "info") {
                     throw error;
                 }
             })();
-            
+
             return modelLoadPromise;
         }
-        
+
         // Start model loading in background after page loads
         if (document.readyState === 'complete') {
             startModelLoading();
         } else {
             window.addEventListener('load', startModelLoading);
         }
-        
+
         // Optimized tokenizer with memoization for better performance
         const tokenCache = new Map();
-        
+
         function tokenizeText(text, maxLength = 50) {
             // Check cache first
             const cacheKey = text.trim().toLowerCase();
             if (tokenCache.has(cacheKey)) {
                 return tokenCache.get(cacheKey);
             }
-            
+
             // In a real application, you would use a proper tokenizer
             // This is a simplified version for demonstration
             const words = cacheKey.split(/\s+/).slice(0, maxLength);
             const tokens = new Array(words.length);
-            
+
             // Process words in batches for better performance
             for (let i = 0; i < words.length; i++) {
                 const word = words[i];
@@ -641,26 +814,26 @@ function logMessage(message, type = "info") {
                 }
                 tokens[i] = Math.abs(hash) % 10000; // Map to vocabulary size
             }
-            
+
             // Pad to maxLength
             const result = new Array(maxLength).fill(0);
             tokens.forEach((token, i) => {
                 result[i] = token;
             });
-            
+
             // Store in cache (limit cache size)
             tokenCache.set(cacheKey, result);
             if (tokenCache.size > 50) {
                 const oldestKey = tokenCache.keys().next().value;
                 tokenCache.delete(oldestKey);
             }
-            
+
             return result;
         }
-        
+
         // Cache for generated code to improve performance
         const codeCache = new Map();
-        
+
         // Function to request code generation from the server
         async function requestCodeGeneration(prompt) {
             return new Promise((resolve, reject) => {
@@ -669,11 +842,11 @@ function logMessage(message, type = "info") {
                     if (!window.socket) {
                         // Create a socket connection if not already established
                         window.socket = io('http://localhost:8080');
-                        
+
                         // Set up event listeners for the socket
                         setupSocketListeners();
                     }
-                    
+
                     // Function to clean up event listeners and clear timeout
                     let timeoutId;
                     const cleanupListeners = () => {
@@ -681,13 +854,13 @@ function logMessage(message, type = "info") {
                         window.socket.off('generation_progress');
                         window.socket.off('generation_error');
                     };
-                    
+
                     // Set a timeout in case the server doesn't respond
                     timeoutId = setTimeout(() => {
                         cleanupListeners(); // Clean up event listeners on timeout
                         reject(new Error("Server response timeout"));
                     }, 60000); // 60 second timeout (increased from 10 seconds)
-                    
+
                     // Set up a one-time listener for the generation response
                     window.socket.once('generation_response', (response) => {
                         cleanupListeners(); // Clean up other listeners
@@ -698,119 +871,119 @@ function logMessage(message, type = "info") {
                             reject(new Error("Invalid response from server"));
                         }
                     });
-                    
+
                     // Set up listeners for progress updates
                     window.socket.on('generation_progress', (progress) => {
                         logMessage(`Generation progress: ${progress.message}`, "info");
                     });
-                    
+
                     // Set up error listener
                     window.socket.once('generation_error', (error) => {
                         cleanupListeners(); // Clean up other listeners
                         logMessage(`Server error: ${error.error}`, "error");
                         reject(new Error(error.error));
                     });
-                    
+
                     // Emit the request to the server
                     logMessage("Sending prompt to server for code generation", "info");
                     window.socket.emit('request_generation', { prompt: prompt });
-                    
+
                     // Set a timeout in case the server doesn't respond
                     setTimeout(() => {
                         reject(new Error("Server response timeout"));
                     }, 60000); // 60 second timeout (increased from 10 seconds)
-                    
+
                 } catch (error) {
                     console.error("Error requesting code generation:", error);
                     reject(error);
                 }
             });
         }
-        
+
         // Set up Socket.IO event listeners
-function setupSocketListeners() {
-    if (!window.socket) return;
-    
-    // Listen for connection events
-    window.socket.on('connect', () => {
-        logMessage("Socket.IO connection established", "success");
-    });
-    
-    window.socket.on('disconnect', () => {
-        logMessage("Socket.IO connection lost", "error");
-    });
-    
-    window.socket.on('connect_error', (error) => {
-        logMessage(`Socket.IO connection error: ${error.message}`, "error");
-    });
-    
-    // Listen for teacher_response event
-    window.socket.on('teacher_response', (data) => {
-        logMessage("Received teacher response from server", "success");
-        // Update the teacher advice display
-        const teacherAdviceElement = document.getElementById('teacher-advice');
-        if (teacherAdviceElement && data.synthetic_data) {
-            teacherAdviceElement.textContent = data.synthetic_data;
+        function setupSocketListeners() {
+            if (!window.socket) return;
+
+            // Listen for connection events
+            window.socket.on('connect', () => {
+                logMessage("Socket.IO connection established", "success");
+            });
+
+            window.socket.on('disconnect', () => {
+                logMessage("Socket.IO connection lost", "error");
+            });
+
+            window.socket.on('connect_error', (error) => {
+                logMessage(`Socket.IO connection error: ${error.message}`, "error");
+            });
+
+            // Listen for teacher_response event
+            window.socket.on('teacher_response', (data) => {
+                logMessage("Received teacher response from server", "success");
+                // Update the teacher advice display
+                const teacherAdviceElement = document.getElementById('teacher-advice');
+                if (teacherAdviceElement && data.synthetic_data) {
+                    teacherAdviceElement.textContent = data.synthetic_data;
+                }
+            });
+
+            // Listen for global_preference_update event
+            window.socket.on('global_preference_update', (data) => {
+                logMessage("Received global preference update from server", "success");
+                // Update the team preference display
+                const preferenceDisplay = document.getElementById('preference-display');
+                if (preferenceDisplay && data.preference) {
+                    preferenceDisplay.textContent = data.preference;
+                }
+            });
+
+            // Listen for preference updates
+            window.socket.on('preference_updated', (data) => {
+                const preferenceValue = data.preference_value;
+                logMessage(`Model preference updated: ${preferenceValue}`, "preference");
+
+                // Update the preference display
+                const preferenceDisplay = document.getElementById('preference-display');
+                if (preferenceDisplay) {
+                    let preferenceText = "Neutral";
+                    if (preferenceValue > 0.5) {
+                        preferenceText = "Verbose Code";
+                    } else if (preferenceValue < -0.5) {
+                        preferenceText = "Concise Code";
+                    }
+                    preferenceDisplay.textContent = preferenceText;
+                }
+
+                // Log detailed preference information
+                console.group('Preference Update Details');
+                console.log(`Preference Value: ${preferenceValue}`);
+                console.log(`Message: ${data.message}`);
+                console.log(`Client ID: ${data.client_id}`);
+                console.groupEnd();
+            });
+
+            // Listen for model update notifications
+            window.socket.on('model_updated', (data) => {
+                logMessage("Model has been updated with your preferences!", "model");
+
+                // Log detailed model update information
+                console.group('Model Update Details');
+                console.log(`Message: ${data.message}`);
+                console.log(`Updated by: ${data.updated_by}`);
+                console.log(`Timestamp: ${new Date().toISOString()}`);
+                console.groupEnd();
+
+                // If we have a current prompt, regenerate code with updated model
+                if (currentPrompt && currentPrompt.trim() !== '') {
+                    logMessage("Regenerating code with updated model...", "model");
+                    // Wait a moment before regenerating
+                    setTimeout(() => {
+                        document.getElementById('generate-btn').click();
+                    }, 1000);
+                }
+            });
         }
-    });
-    
-    // Listen for global_preference_update event
-    window.socket.on('global_preference_update', (data) => {
-        logMessage("Received global preference update from server", "success");
-        // Update the team preference display
-        const preferenceDisplay = document.getElementById('preference-display');
-        if (preferenceDisplay && data.preference) {
-            preferenceDisplay.textContent = data.preference;
-        }
-    });
-    
-    // Listen for preference updates
-    window.socket.on('preference_updated', (data) => {
-        const preferenceValue = data.preference_value;
-        logMessage(`Model preference updated: ${preferenceValue}`, "preference");
-        
-        // Update the preference display
-        const preferenceDisplay = document.getElementById('preference-display');
-        if (preferenceDisplay) {
-            let preferenceText = "Neutral";
-            if (preferenceValue > 0.5) {
-                preferenceText = "Verbose Code";
-            } else if (preferenceValue < -0.5) {
-                preferenceText = "Concise Code";
-            }
-            preferenceDisplay.textContent = preferenceText;
-        }
-        
-        // Log detailed preference information
-        console.group('Preference Update Details');
-        console.log(`Preference Value: ${preferenceValue}`);
-        console.log(`Message: ${data.message}`);
-        console.log(`Client ID: ${data.client_id}`);
-        console.groupEnd();
-    });
-    
-    // Listen for model update notifications
-    window.socket.on('model_updated', (data) => {
-        logMessage("Model has been updated with your preferences!", "model");
-        
-        // Log detailed model update information
-        console.group('Model Update Details');
-        console.log(`Message: ${data.message}`);
-        console.log(`Updated by: ${data.updated_by}`);
-        console.log(`Timestamp: ${new Date().toISOString()}`);
-        console.groupEnd();
-        
-        // If we have a current prompt, regenerate code with updated model
-        if (currentPrompt && currentPrompt.trim() !== '') {
-            logMessage("Regenerating code with updated model...", "model");
-            // Wait a moment before regenerating
-            setTimeout(() => {
-                document.getElementById('generate-btn').click();
-            }, 1000);
-        }
-    });
-}
-        
+
         // Convert TensorFlow.js model weights to Flower format
         function getModelWeights(model) {
             return model.weights.map(w => {
@@ -820,7 +993,7 @@ function setupSocketListeners() {
                 return Array.from(tensorValues);
             });
         }
-        
+
         // Set model weights from Flower format
         function setModelWeights(model, weights) {
             // Skip if weights array is empty (happens on first round)
@@ -828,30 +1001,30 @@ function setupSocketListeners() {
                 logMessage("Received empty weights, skipping", "info");
                 return;
             }
-            
+
             try {
                 // Check if TensorFlow.js is loaded
                 if (typeof tf === 'undefined') {
                     throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
                 }
-                
+
                 // Zip weights with model weights for easier handling
                 const weightPairs = model.weights.map((w, i) => {
                     return { weight: w, values: weights[i] };
                 });
-                
+
                 // Set each weight tensor
                 weightPairs.forEach(pair => {
                     const tensor = tf.tensor(pair.values, pair.weight.val.shape);
                     pair.weight.val.assign(tensor);
                 });
-                
+
                 logMessage("Updated model with weights from server", "success");
             } catch (e) {
                 logMessage(`Error setting weights: ${e.message}`, "error");
             }
         }
-        
+
         // Main function to initialize the client with optimized loading time and error handling
         async function initFlowerClient() {
             // Cache DOM elements for better performance
@@ -866,20 +1039,20 @@ function setupSocketListeners() {
                 outputContainer: document.getElementById('output-container'),
                 loading: document.getElementById('loading')
             };
-            
+
             const clientId = getClientId() || "Unknown";
-            
+
             // Display client ID
             elements.clientId.textContent = `#${clientId}`;
             elements.status.textContent = "Initializing...";
-            
+
             try {
                 // Start model loading in background immediately
                 startModelLoading();
-                
+
                 // Start loading libraries in parallel with shorter timeout
                 const flowerPromise = checkFlowerLoaded();
-                
+
                 // Check if TensorFlow.js is loaded
                 const tfPromise = new Promise((resolve, reject) => {
                     if (typeof tf !== 'undefined') {
@@ -897,7 +1070,7 @@ function setupSocketListeners() {
                                 tf.ready().then(resolve);
                             }
                         }, 100);
-                        
+
                         // Set a timeout to reject if it takes too long
                         const timeoutId = setTimeout(() => {
                             clearInterval(checkInterval);
@@ -905,46 +1078,46 @@ function setupSocketListeners() {
                         }, 10000); // 10 second timeout
                     }
                 });
-                
+
                 // Wait for both libraries to load with timeout
                 const librariesPromise = Promise.all([flowerPromise, tfPromise]);
                 await Promise.race([
                     librariesPromise,
                     new Promise((_, reject) => setTimeout(() => reject(new Error("Libraries loading timeout")), 8000))
                 ]);
-                
+
                 logMessage("Libraries loaded successfully", "success");
                 elements.status.textContent = "Libraries loaded. Loading model...";
-                
+
                 // Continue with model loading that was started in background
                 const modelPromise = loadCodeModel();
-                
+
                 // Store training data
                 window.currentPrompt = "";
                 window.currentGeneratedCode = "";
                 window.currentEditedCode = "";
                 window.originalGeneratedCode = ""; // Add missing variable declaration
-                
+
                 // Implement a full Flower client with TensorFlow.js integration
                 class MyFlowerClient extends fl.client.Client {
                     constructor(model) {
                         super();
                         this.model = model;
                     }
-                    
+
                     getWeights() {
                         logMessage("Getting model weights", "info");
                         return getModelWeights(this.model);
                     }
-                    
+
                     setWeights(weights) {
                         logMessage("Setting model weights from server", "info");
                         setModelWeights(this.model, weights);
                     }
-                    
+
                     async fit(parameters, config) {
                         logMessage("Fit called by server", "info");
-                        
+
                         // Check for synthetic data in config
                         if (config && config.synthetic_data) {
                             logMessage(`Received synthetic data: ${config.synthetic_data}`, "success");
@@ -954,33 +1127,33 @@ function setupSocketListeners() {
                                 teacherAdviceElement.textContent = config.synthetic_data;
                             }
                         }
-                        
+
                         // Set weights received from the server
                         this.setWeights(parameters);
-                        
+
                         // Skip training if we don't have user feedback data
                         if (!currentPrompt || !currentEditedCode) {
                             logMessage("No training data available, skipping training", "info");
-                            
+
                             // Request the latest global preference even if we skip training
                             if (window.socket && window.socket.connected) {
                                 window.socket.emit('get_global_preference', { client_id: getClientId() });
                                 logMessage("Requested latest global preference", "info");
                             }
-                            
+
                             return {
                                 parameters: this.getWeights(),
                                 num_examples: 0,
                                 status: { message: "OK" }
                             };
                         }
-                        
+
                         logMessage("Training on user feedback...", "info");
-                        
+
                         // Compare the line count of original vs edited code
                         const originalLineCount = currentGeneratedCode.split('\n').length;
                         const editedLineCount = currentEditedCode.split('\n').length;
-                        
+
                         // Determine preference: 1 for longer code, -1 for shorter code
                         let preferenceValue = 0;
                         if (editedLineCount > originalLineCount) {
@@ -995,17 +1168,17 @@ function setupSocketListeners() {
                             preferenceValue = 0.1;
                             logMessage("Code length unchanged - applying small preference update", "info");
                         }
-                        
+
                         // Create training tensors for our simple preference model
                         const inputTensor = tf.tensor2d([[1]], [1, 1]);  // Input is always 1
                         const targetTensor = tf.tensor2d([[preferenceValue]], [1, 1]);
-                        
+
                         // Get training config
                         const epochs = config.epochs || 1;
                         const batchSize = config.batch_size || 1;
-                        
+
                         logMessage(`Training for ${epochs} epochs with preference value ${preferenceValue}`, "info");
-                        
+
                         // Train the model
                         const result = await this.model.fit(inputTensor, targetTensor, {
                             epochs: epochs,
@@ -1016,62 +1189,62 @@ function setupSocketListeners() {
                                 }
                             }
                         });
-                        
+
                         logMessage(`Training complete. Final loss: ${result.history.loss.slice(-1)[0].toFixed(4)}`, "success");
-                        
+
                         // Clean up tensors
                         inputTensor.dispose();
                         targetTensor.dispose();
-                        
+
                         // Reset training data
                         currentPrompt = "";
                         currentGeneratedCode = "";
                         currentEditedCode = "";
-                        
+
                         // Get updated weights to send back to server
                         const updatedWeights = this.getWeights();
-                        
+
                         // Display the current preference in the dashboard
                         const preferenceDisplay = document.getElementById('preference-display');
                         if (preferenceDisplay) {
                             // Get the current weight value
                             const currentWeight = this.model.layers[0].getWeights()[0].dataSync()[0];
                             let preferenceText = "Neutral";
-                            
+
                             if (currentWeight > 0.5) {
                                 preferenceText = "Verbose Code";
                             } else if (currentWeight < -0.5) {
                                 preferenceText = "Concise Code";
                             }
-                            
+
                             preferenceDisplay.textContent = preferenceText;
                             logMessage(`Updated team preference display: ${preferenceText}`, "info");
                         }
-                        
+
                         // Request the latest global preference after completing a round
                         if (window.socket && window.socket.connected) {
                             window.socket.emit('get_global_preference', { client_id: getClientId() });
                             logMessage("Requested latest global preference", "info");
                         }
-                        
+
                         return {
                             parameters: updatedWeights,
                             num_examples: 1, // We trained on one example
                             status: { message: "OK" }
                         };
                     }
-                    
+
                     async evaluate(parameters, config) {
                         logMessage("Evaluate called by server", "info");
-                        
+
                         // Set weights received from the server
                         this.setWeights(parameters);
-                        
+
                         // In a real implementation, you would evaluate on a validation set
                         // For this demo, we'll return a fixed loss value
-                        
+
                         logMessage("Evaluation complete", "success");
-                        
+
                         return {
                             loss: 0.1,
                             num_examples: 1,
@@ -1083,10 +1256,10 @@ function setupSocketListeners() {
                 // Wait for model to finish loading
                 const model = await modelPromise;
                 elements.status.textContent = "Model loaded. Attempting to connect...";
-                
+
                 // Create client instance with our model
                 const client = new MyFlowerClient(model);
-                
+
                 // Set up UI event handlers with optimized performance
                 elements.generateBtn.addEventListener('click', async () => {
                     const prompt = elements.promptInput.value.trim();
@@ -1094,30 +1267,30 @@ function setupSocketListeners() {
                         logMessage("Please enter a code request", "error");
                         return;
                     }
-                    
+
                     logMessage(`Sending prompt to server: ${prompt}`, "info");
                     elements.generateBtn.disabled = true;
                     elements.generateBtn.textContent = "Generating...";
-                    
+
                     // Show loading indicator
                     showLoading(true);
-                    
+
                     try {
                         // Use setTimeout to allow UI to update before processing
                         await new Promise(resolve => setTimeout(resolve, 50));
-                        
+
                         // Request code generation from the server
                         const code = await requestCodeGeneration(prompt);
-                        
+
                         // Display the generated code
                         elements.outputCode.textContent = code;
                         elements.outputContainer.classList.remove('hidden');
-                        
+
                         // Store the current prompt and generated code
                         window.currentPrompt = prompt;
                         window.currentGeneratedCode = code;
                         window.originalGeneratedCode = code; // Store original code for comparison
-                        
+
                         logMessage("Code received and displayed successfully", "success");
                     } catch (error) {
                         console.error("Generation error:", error);
@@ -1131,105 +1304,105 @@ function setupSocketListeners() {
                         showLoading(false);
                     }
                 });
-                
+
                 elements.editBtn.addEventListener('click', () => {
                     // Make the code editable
                     elements.outputCode.contentEditable = "true";
                     elements.outputCode.focus();
-                    
+
                     // Show the improve button
                     elements.improveBtn.classList.remove('hidden');
                     elements.editBtn.classList.add('hidden');
-                    
+
                     logMessage("You can now edit the code. Click 'Submit Improvement' when done.", "info");
                 });
-                
+
                 elements.improveBtn.addEventListener('click', () => {
                     // Get the edited code
                     window.currentEditedCode = elements.outputCode.textContent;
-                    
+
                     // Make the code non-editable again
                     elements.outputCode.contentEditable = "false";
-                    
+
                     // Hide the improve button, show edit button
                     elements.improveBtn.classList.add('hidden');
                     elements.editBtn.classList.remove('hidden');
-                    
+
                     // Submit the improvement to the server
                     function submitImprovement(original, edited, prompt) {
-                         if (window.socket && window.socket.connected) {
-                             // Log detailed information about the improvement being submitted
-                             console.group('Submitting Code Improvement');
-                             console.log('Original code length:', original.length);
-                             console.log('Edited code length:', edited.length);
-                             console.log('Prompt:', prompt);
-                             
-                             // Calculate basic metrics
-                             const originalLines = original.split('\n').length;
-                             const editedLines = edited.split('\n').length;
-                             const lineDiff = editedLines - originalLines;
-                             console.log('Line difference:', lineDiff);
-                             
-                             // Check for comment changes
-                             const originalComments = (original.match(/#/g) || []).length;
-                             const editedComments = (edited.match(/#/g) || []).length;
-                             const commentDiff = editedComments - originalComments;
-                             console.log('Comment difference:', commentDiff);
-                             console.groupEnd();
-                             
-                             // Determine preference value based on code changes
-                             let preferenceValue = 0;
-                             if (editedLines > originalLines) {
-                                 preferenceValue = 1;  // User prefers longer, more verbose code
-                             } else if (editedLines < originalLines) {
-                                 preferenceValue = -1; // User prefers shorter, more concise code
-                             } else if (editedComments > originalComments) {
-                                 preferenceValue = 0.7;  // User prefers more comments
-                             } else if (editedComments < originalComments) {
-                                 preferenceValue = -0.7; // User prefers fewer comments
-                             } else {
-                                 preferenceValue = 0.1; // Small change
-                             }
-                             
-                             // Update the preference display immediately for better UX
-                             const preferenceDisplay = document.getElementById('preference-display');
-                             if (preferenceDisplay) {
-                                 let preferenceText = "Neutral";
-                                 if (preferenceValue > 0.5) {
-                                     preferenceText = "Verbose Code";
-                                 } else if (preferenceValue < -0.5) {
-                                     preferenceText = "Concise Code";
-                                 }
-                                 preferenceDisplay.textContent = preferenceText;
-                             }
-                             
-                             // Send the improvement to the server
-                             window.socket.emit('submit_improvement', {
-                                 client_id: getClientId(),
-                                 original_code: original,
-                                 edited_code: edited,
-                                 prompt: prompt
-                             });
-                             
-                             logMessage("Sent code improvement to server", "preference");
-                             logMessage(`Changes: ${lineDiff} lines, ${commentDiff} comments`, "preference");
-                             logMessage(`Preference updated to: ${preferenceValue > 0.5 ? 'Verbose Code' : preferenceValue < -0.5 ? 'Concise Code' : 'Neutral'}`, "preference");
-                         } else {
-                             logMessage("Socket connection not available", "error");
-                         }
-                     }
-                    
+                        if (window.socket && window.socket.connected) {
+                            // Log detailed information about the improvement being submitted
+                            console.group('Submitting Code Improvement');
+                            console.log('Original code length:', original.length);
+                            console.log('Edited code length:', edited.length);
+                            console.log('Prompt:', prompt);
+
+                            // Calculate basic metrics
+                            const originalLines = original.split('\n').length;
+                            const editedLines = edited.split('\n').length;
+                            const lineDiff = editedLines - originalLines;
+                            console.log('Line difference:', lineDiff);
+
+                            // Check for comment changes
+                            const originalComments = (original.match(/#/g) || []).length;
+                            const editedComments = (edited.match(/#/g) || []).length;
+                            const commentDiff = editedComments - originalComments;
+                            console.log('Comment difference:', commentDiff);
+                            console.groupEnd();
+
+                            // Determine preference value based on code changes
+                            let preferenceValue = 0;
+                            if (editedLines > originalLines) {
+                                preferenceValue = 1;  // User prefers longer, more verbose code
+                            } else if (editedLines < originalLines) {
+                                preferenceValue = -1; // User prefers shorter, more concise code
+                            } else if (editedComments > originalComments) {
+                                preferenceValue = 0.7;  // User prefers more comments
+                            } else if (editedComments < originalComments) {
+                                preferenceValue = -0.7; // User prefers fewer comments
+                            } else {
+                                preferenceValue = 0.1; // Small change
+                            }
+
+                            // Update the preference display immediately for better UX
+                            const preferenceDisplay = document.getElementById('preference-display');
+                            if (preferenceDisplay) {
+                                let preferenceText = "Neutral";
+                                if (preferenceValue > 0.5) {
+                                    preferenceText = "Verbose Code";
+                                } else if (preferenceValue < -0.5) {
+                                    preferenceText = "Concise Code";
+                                }
+                                preferenceDisplay.textContent = preferenceText;
+                            }
+
+                            // Send the improvement to the server
+                            window.socket.emit('submit_improvement', {
+                                client_id: getClientId(),
+                                original_code: original,
+                                edited_code: edited,
+                                prompt: prompt
+                            });
+
+                            logMessage("Sent code improvement to server", "preference");
+                            logMessage(`Changes: ${lineDiff} lines, ${commentDiff} comments`, "preference");
+                            logMessage(`Preference updated to: ${preferenceValue > 0.5 ? 'Verbose Code' : preferenceValue < -0.5 ? 'Concise Code' : 'Neutral'}`, "preference");
+                        } else {
+                            logMessage("Socket connection not available", "error");
+                        }
+                    }
+
                     submitImprovement(window.originalGeneratedCode, window.currentEditedCode, window.currentPrompt);
-                    
+
                     logMessage("Improvement submitted. Your preferences are being learned.", "success");
-                    
+
                     // In a real implementation, you might want to trigger training immediately
                     // For this demo, we'll wait for the server to call fit
                 });
-                
+
                 // Start the connection with improved timeout handling
                 logMessage("Connecting to Flower server...", "info");
-                
+
                 // Set up connection with retry logic
                 const connectWithRetry = async (retries = 3, delay = 2000) => {
                     for (let attempt = 1; attempt <= retries; attempt++) {
@@ -1238,23 +1411,23 @@ function setupSocketListeners() {
                             return await fl.client.startClient("http://localhost:8080", client);
                         } catch (err) {
                             if (attempt === retries) throw err;
-                            logMessage(`Connection failed, retrying in ${delay/1000}s...`, "error");
+                            logMessage(`Connection failed, retrying in ${delay / 1000}s...`, "error");
                             await new Promise(resolve => setTimeout(resolve, delay));
                         }
                     }
                 };
-                
+
                 // Race the connection against timeout
                 const connectionPromise = connectWithRetry();
                 const timeoutPromise = new Promise((_, reject) => {
                     setTimeout(() => reject(new Error("Connection timeout after 15 seconds")), 15000);
                 });
-                
+
                 await Promise.race([connectionPromise, timeoutPromise]);
-                
+
                 elements.status.textContent = "SUCCESS: Connected to server!";
                 logMessage("Flower client connected successfully!", "success");
-                
+
             } catch (e) {
                 // Handle specific error types
                 if (e.message.includes("timeout")) {
@@ -1270,70 +1443,70 @@ function setupSocketListeners() {
                 console.error("Initialization error:", e);
             }
         }
-        
+
         // Set up Global Update button functionality
-        document.getElementById('call-teacher-btn').addEventListener('click', function() {
+        document.getElementById('call-teacher-btn').addEventListener('click', function () {
             logMessage("Requesting global updates...", "info");
             if (window.socket) {
                 // Get the current prompt
                 const currentPrompt = document.getElementById('prompt-input').value;
-                
+
                 // Update UI to show processing state
                 const indicatorDot = document.querySelector('.indicator-dot');
                 const indicatorText = document.querySelector('.indicator-text');
                 indicatorDot.classList.add('updating');
                 indicatorText.textContent = 'Model Status: Updating...';
-                
+
                 // Request teacher advice with the current prompt
-                window.socket.emit('call_teacher', { 
+                window.socket.emit('call_teacher', {
                     client_id: getClientId(),
                     prompt: currentPrompt
                 });
-                
+
                 // Also request the latest global preference
                 window.socket.emit('get_global_preference', { client_id: getClientId() });
-                
+
                 logMessage("Global update requested - fetching expert advice and updating model", "success");
             } else {
                 logMessage("Socket connection not available", "error");
             }
         });
-                
-                // Set up socket connection and event listeners
+
+        // Set up socket connection and event listeners
         // Connect to the Socket.IO server with explicit URL
         window.socket = io('http://localhost:8080');
-        
+
         // Listen for connection events
-        window.socket.on('connect', function() {
+        window.socket.on('connect', function () {
             logMessage("Socket.IO connection established", "success");
-            
+
             // Listen for teacher progress updates
-            window.socket.on('teacher_progress', function(data) {
+            window.socket.on('teacher_progress', function (data) {
                 const modelName = data.model || 'Llama 3.1 (via Groq API)';
                 logMessage(`Expert consultant (${modelName}): ${data.message}`, "info");
             });
-            
+
             // Listen for teacher advice responses
-            window.socket.on('teacher_response', function(data) {
+            window.socket.on('teacher_response', function (data) {
                 const teacherAdvice = data.synthetic_data;
                 const timestamp = data.timestamp || new Date().toLocaleString();
                 const modelUpdated = data.model_updated || false;
                 const modelName = data.model_name || 'Llama 3.1 (via Groq API)';
-                
+
                 // Update the teacher advice display
                 document.getElementById('teacher-advice').textContent = teacherAdvice;
                 document.getElementById('teacher-timestamp').textContent = `Updated: ${timestamp} (via ${modelName})`;
-                
+
                 // Reset the model update indicator
                 const indicatorDot = document.querySelector('.indicator-dot');
                 const indicatorText = document.querySelector('.indicator-text');
                 indicatorDot.classList.remove('updating');
-                
+
                 if (modelUpdated) {
                     // Show success state
                     indicatorText.textContent = `Model Status: Updated with ${modelName}`;
                     logMessage(`Model updated with expert knowledge from ${modelName}`, "model");
-                    
+
                     // Flash effect to indicate update
                     document.getElementById('teacher-advice-container').style.backgroundColor = 'rgba(76, 175, 80, 0.2)';
                     setTimeout(() => {
@@ -1342,59 +1515,59 @@ function setupSocketListeners() {
                 } else {
                     indicatorText.textContent = 'Model Status: Ready';
                 }
-                
+
                 logMessage("Received new expert advice", "success");
             });
-            
+
             // Listen for teacher errors
-            window.socket.on('teacher_error', function(data) {
+            window.socket.on('teacher_error', function (data) {
                 const modelName = data.model_name || 'Llama 3.1 (via Groq API)';
                 document.getElementById('teacher-advice').textContent = `Error from ${modelName}: ${data.error}`;
                 document.getElementById('teacher-timestamp').textContent = `Error occurred: ${new Date().toLocaleString()}`;
-                
+
                 // Reset the model update indicator to error state
                 const indicatorDot = document.querySelector('.indicator-dot');
                 const indicatorText = document.querySelector('.indicator-text');
                 indicatorDot.classList.remove('updating');
                 indicatorDot.style.backgroundColor = 'red';
                 indicatorText.textContent = `Model Status: Error with ${modelName}`;
-                
+
                 logMessage(`Expert consultant error (${modelName}): ${data.error}`, "error");
-                
+
                 // Reset after a delay
                 setTimeout(() => {
                     indicatorDot.style.backgroundColor = '';
                     indicatorText.textContent = 'Model Status: Ready';
                 }, 5000);
             });
-            
+
             // Listen for global preference updates
-            window.socket.on('global_preference_update', function(data) {
-                document.getElementById('preference-display').textContent = 
-                    typeof data.preference === 'number' ? 
-                    data.preference.toFixed(2) : 
-                    JSON.stringify(data.preference);
-                    
-                logMessage("Received global preference update: " + 
-                    (typeof data.preference === 'number' ? 
-                    data.preference.toFixed(2) : 
-                    JSON.stringify(data.preference)), "preference");
+            window.socket.on('global_preference_update', function (data) {
+                document.getElementById('preference-display').textContent =
+                    typeof data.preference === 'number' ?
+                        data.preference.toFixed(2) :
+                        JSON.stringify(data.preference);
+
+                logMessage("Received global preference update: " +
+                    (typeof data.preference === 'number' ?
+                        data.preference.toFixed(2) :
+                        JSON.stringify(data.preference)), "preference");
             });
-            
+
             // Listen for model update notifications
-            window.socket.on('model_update', function(data) {
+            window.socket.on('model_update', function (data) {
                 logMessage(data.message, "model");
             });
         });
-        
-        window.socket.on('disconnect', function() {
+
+        window.socket.on('disconnect', function () {
             logMessage("Socket.IO connection lost", "error");
         });
-        
-        window.socket.on('connect_error', function(error) {
+
+        window.socket.on('connect_error', function (error) {
             logMessage("Socket.IO connection error: " + error, "error");
         });
-        
+
         // Start the initialization process
         initFlowerClient();
     </script>

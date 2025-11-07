@@ -591,6 +591,16 @@
                 </div>
 
                 <div class="dashboard-section">
+                    <h3>Privacy Controls</h3>
+                    <label for="privacy-slider">Privacy Level (Epsilon): <span id="epsilon-value">1.0</span></label>
+                    <div style="display:flex;gap:8px;align-items:center;">
+                        <input type="range" id="privacy-slider" min="0.1" max="5.0" value="1.0" step="0.1" style="flex:1;">
+                        <button id="update-privacy-btn" class="secondary">Update</button>
+                    </div>
+                    <small>Lower epsilon means more noise and stronger privacy.</small>
+                </div>
+
+                <div class="dashboard-section">
                     <h3>Expert Consultant</h3>
                     <div class="expert-controls">
                         <!-- Removed lightning icon from global update button -->
@@ -743,14 +753,14 @@
                         throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
                     }
 
-                    // For this demo, we'll use a very simple model for preference learning
-                    // This model will learn if users prefer longer or shorter code
+                    // For this demo, we'll use a simple linear model for multi-dimensional preferences
+                    // Dimensions: [verbosity, documentation, type_hinting]
                     const model = tf.sequential();
 
-                    // Simple input layer with shape [1] for a single preference value
+                    // Input is a 3-d feature vector; output is a 3-d preference vector
                     model.add(tf.layers.dense({
-                        units: 1,
-                        inputShape: [1],
+                        units: 3,
+                        inputShape: [3],
                         activation: 'linear',
                         useBias: true
                     }));
@@ -761,11 +771,11 @@
                         loss: 'meanSquaredError'
                     });
 
-                    // Initialize with neutral preference
-                    // Dense layer expects weights and bias as separate tensors
-                    const initialWeights = tf.tensor2d([[0.0]]);
-                    const initialBias = tf.tensor1d([0.0]);
-                    model.layers[0].setWeights([initialWeights, initialBias]);
+                    // Initialize with neutral preference (zeros)
+                    // Kernel shape [in=3, out=3], bias shape [3]
+                    const initialKernel = tf.zeros([3, 3]);
+                    const initialBias = tf.zeros([3]);
+                    model.layers[0].setWeights([initialKernel, initialBias]);
 
                     logMessage("Code generation model created successfully", "success");
                     codeModel = model;
@@ -1025,6 +1035,33 @@
             }
         }
 
+        // Global epsilon (updated explicitly via the Update button)
+        window.currentEpsilon = '1.0';
+
+        // Apply differential privacy by adding Gaussian noise to model weights
+        function applyDifferentialPrivacy(model) {
+            try {
+                if (typeof tf === 'undefined') {
+                    throw new Error("TensorFlow.js is not loaded yet. Please wait and try again.");
+                }
+                const eps = Math.max(parseFloat(window.currentEpsilon) || 1.0, 0.0001);
+                const stddev = 1.0 / eps;
+                const noisyWeights = model.weights.map(w => {
+                    const noise = tf.randomNormal(w.val.shape, 0, stddev, 'float32');
+                    const noisyTensor = tf.add(w.val, noise);
+                    const arr = Array.from(noisyTensor.dataSync());
+                    noise.dispose();
+                    noisyTensor.dispose();
+                    return arr;
+                });
+                return noisyWeights;
+            } catch (e) {
+                logMessage(`Error applying differential privacy: ${e.message}`, "error");
+                // Fallback to returning current (non-noised) weights if something goes wrong
+                return getModelWeights(model);
+            }
+        }
+
         // Main function to initialize the client with optimized loading time and error handling
         async function initFlowerClient() {
             // Cache DOM elements for better performance
@@ -1037,7 +1074,9 @@
                 promptInput: document.getElementById('prompt-input'),
                 outputCode: document.getElementById('output-code'),
                 outputContainer: document.getElementById('output-container'),
-                loading: document.getElementById('loading')
+                loading: document.getElementById('loading'),
+                privacySlider: document.getElementById('privacy-slider'),
+                epsilonValue: document.getElementById('epsilon-value')
             };
 
             const clientId = getClientId() || "Unknown";
@@ -1150,34 +1189,69 @@
 
                         logMessage("Training on user feedback...", "info");
 
-                        // Compare the line count of original vs edited code
-                        const originalLineCount = currentGeneratedCode.split('\n').length;
-                        const editedLineCount = currentEditedCode.split('\n').length;
+                        // Analyze edits for multi-dimensional preferences
+                        const original = currentGeneratedCode || '';
+                        const edited = currentEditedCode || '';
 
-                        // Determine preference: 1 for longer code, -1 for shorter code
-                        let preferenceValue = 0;
+                        // 1) Verbosity (lines)
+                        const originalLineCount = original.split('\n').length;
+                        const editedLineCount = edited.split('\n').length;
+                        let verbosity = 0.0;
                         if (editedLineCount > originalLineCount) {
-                            preferenceValue = 1;  // User prefers longer, more verbose code
-                            logMessage("User made code longer - training model to prefer verbose code", "info");
+                            verbosity = 1.0;
+                            logMessage("User made code longer - verbosity preference up", "info");
                         } else if (editedLineCount < originalLineCount) {
-                            preferenceValue = -1; // User prefers shorter, more concise code
-                            logMessage("User made code shorter - training model to prefer concise code", "info");
+                            verbosity = -1.0;
+                            logMessage("User made code shorter - verbosity preference down", "info");
                         } else {
-                            // Code length unchanged, but content might have changed
-                            // For simplicity, we'll use a small positive value
-                            preferenceValue = 0.1;
-                            logMessage("Code length unchanged - applying small preference update", "info");
+                            verbosity = 0.1;
+                            logMessage("Code length unchanged - small verbosity update", "info");
                         }
 
-                        // Create training tensors for our simple preference model
-                        const inputTensor = tf.tensor2d([[1]], [1, 1]);  // Input is always 1
-                        const targetTensor = tf.tensor2d([[preferenceValue]], [1, 1]);
+                        // 2) Documentation (comment count '#')
+                        const countHash = (s) => (s.match(/#/g) || []).length;
+                        const originalComments = countHash(original);
+                        const editedComments = countHash(edited);
+                        let documentation = 0.0;
+                        if (editedComments > originalComments) {
+                            documentation = 1.0;
+                            logMessage("User added comments - documentation preference up", "info");
+                        } else if (editedComments < originalComments) {
+                            documentation = -1.0;
+                            logMessage("User removed comments - documentation preference down", "info");
+                        } else {
+                            documentation = 0.1;
+                            logMessage("Comments unchanged - small documentation update", "info");
+                        }
+
+                        // 3) Type hinting (annotations in signatures and returns)
+                        const typePattern = /:\s*[A-Za-z_][\w\[\],\s\.\|]*/g;
+                        const returnPattern = /->\s*[A-Za-z_][\w\[\],\s\.\|]*/g;
+                        const countTypes = (s) => ((s.match(typePattern) || []).length + (s.match(returnPattern) || []).length);
+                        const originalTypes = countTypes(original);
+                        const editedTypes = countTypes(edited);
+                        let typeHinting = 0.0;
+                        if (editedTypes > originalTypes) {
+                            typeHinting = 1.0;
+                            logMessage("User added type hints - type_hinting preference up", "info");
+                        } else if (editedTypes < originalTypes) {
+                            typeHinting = -1.0;
+                            logMessage("User removed type hints - type_hinting preference down", "info");
+                        } else {
+                            typeHinting = 0.1;
+                            logMessage("Type hints unchanged - small type_hinting update", "info");
+                        }
+
+                        // Create training tensors for the multi-dimensional preference model
+                        const inputTensor = tf.tensor2d([[1, 1, 1]], [1, 3]);
+                        const targetTensor = tf.tensor2d([[verbosity, documentation, typeHinting]], [1, 3]);
 
                         // Get training config
                         const epochs = config.epochs || 1;
                         const batchSize = config.batch_size || 1;
 
-                        logMessage(`Training for ${epochs} epochs with preference value ${preferenceValue}`, "info");
+                        const vectorStr = `v=${verbosity.toFixed(2)}, d=${documentation.toFixed(2)}, t=${typeHinting.toFixed(2)}`;
+                        logMessage(`Training for ${epochs} epochs with preference vector { ${vectorStr} }`, "info");
 
                         // Train the model
                         const result = await this.model.fit(inputTensor, targetTensor, {
@@ -1204,19 +1278,44 @@
                         // Get updated weights to send back to server
                         const updatedWeights = this.getWeights();
 
-                        // Display the current preference in the dashboard
+                        // Transparency: log original clean preference vector from model bias
+                        try {
+                            const layerWeights = this.model.layers[0].getWeights();
+                            if (layerWeights && layerWeights[1]) {
+                                const origVec = Array.from(layerWeights[1].dataSync());
+                                console.log("Original preference vector:", origVec);
+                            }
+                        } catch (_) {}
+
+                        // Apply Differential Privacy to the weights before sending
+                        logMessage(`Applying Differential Privacy with Epsilon=${window.currentEpsilon}`, 'info');
+                        const noisyWeights = applyDifferentialPrivacy(this.model);
+                        // Minimal DP verification logging (first few weights)
+                        try {
+                            const flat = noisyWeights.flat();
+                            const sample = flat.slice(0, 6).map(x => Number(x).toFixed(4));
+                            logMessage(`DP applied (epsilon=${window.currentEpsilon}). Sample weights: [${sample.join(', ')}]`, 'info');
+                        } catch (_) {}
+
+                        // Transparency: log noisy preference vector (bias) being sent
+                        try {
+                            if (noisyWeights && noisyWeights[1]) {
+                                const noisyVec = noisyWeights[1].slice(0, 3);
+                                console.log("Noisy preference vector being sent:", noisyVec);
+                            }
+                        } catch (_) {}
+
+                        // Display the current multi-dimensional preference in the dashboard
                         const preferenceDisplay = document.getElementById('preference-display');
                         if (preferenceDisplay) {
-                            // Get the current weight value
-                            const currentWeight = this.model.layers[0].getWeights()[0].dataSync()[0];
-                            let preferenceText = "Neutral";
-
-                            if (currentWeight > 0.5) {
-                                preferenceText = "Verbose Code";
-                            } else if (currentWeight < -0.5) {
-                                preferenceText = "Concise Code";
-                            }
-
+                            const pred = this.model.predict(tf.tensor2d([[1, 1, 1]], [1, 3]));
+                            const values = Array.from(pred.dataSync());
+                            pred.dispose();
+                            const [v, d, t] = values;
+                            const vText = v > 0.5 ? 'Verbose' : (v < -0.5 ? 'Concise' : 'Neutral Verbosity');
+                            const dText = d > 0.5 ? 'High Documentation' : (d < -0.5 ? 'Minimal Documentation' : 'Neutral Documentation');
+                            const tText = t > 0.5 ? 'Type-Hinted' : (t < -0.5 ? 'No Type Hints' : 'Neutral Type Hints');
+                            const preferenceText = `${vText} | ${dText} | ${tText}`;
                             preferenceDisplay.textContent = preferenceText;
                             logMessage(`Updated team preference display: ${preferenceText}`, "info");
                         }
@@ -1228,7 +1327,7 @@
                         }
 
                         return {
-                            parameters: updatedWeights,
+                            parameters: noisyWeights,
                             num_examples: 1, // We trained on one example
                             status: { message: "OK" }
                         };
@@ -1317,6 +1416,52 @@
                     logMessage("You can now edit the code. Click 'Submit Improvement' when done.", "info");
                 });
 
+                // Analyze code changes to produce multi-dimensional style vector
+                function analyzeCodeChanges(original, edited) {
+                    const safeOrig = original || '';
+                    const safeEdit = edited || '';
+
+                    // documentation: based on count of '#'
+                    const countHash = (s) => (s.match(/#/g) || []).length;
+                    const docDelta = countHash(safeEdit) - countHash(safeOrig);
+                    const documentation = docDelta > 0 ? 1 : (docDelta < 0 ? -1 : 0);
+
+                    // typeHinting: occurrences of parameter/return annotations
+                    const typePattern = /:\s*[A-Za-z_][\w\[\],\s\.\|]*/g;
+                    const returnPattern = /->\s*[A-Za-z_][\w\[\],\s\.\|]*/g;
+                    const countHints = (s) => ((s.match(typePattern) || []).length + (s.match(returnPattern) || []).length);
+                    const hintDelta = countHints(safeEdit) - countHints(safeOrig);
+                    const typeHinting = hintDelta > 0 ? 1 : (hintDelta < 0 ? -1 : 0);
+
+                    // modernSyntax: prefer f-strings over str.format
+                    const countFstrings = (s) => ((s.match(/f"[\s\S]*?"/g) || []).length + (s.match(/f\'[\s\S]*?\'/g) || []).length);
+                    const countFormat = (s) => (s.match(/\.format\s*\(/g) || []).length;
+                    const fDelta = countFstrings(safeEdit) - countFstrings(safeOrig);
+                    const formatDelta = countFormat(safeEdit) - countFormat(safeOrig);
+                    let modernSyntax = 0;
+                    if (fDelta > 0 && formatDelta <= 0) modernSyntax = 1;
+                    else if (fDelta < 0 && formatDelta > 0) modernSyntax = -1;
+                    else modernSyntax = 0;
+
+                    return { documentation, typeHinting, modernSyntax };
+                }
+
+                // Helper to format preference vector for display (new dimensions)
+                function formatPreferenceVector(obj) {
+                    if (!obj || typeof obj !== 'object') return JSON.stringify(obj);
+                    const parts = [];
+                    if (obj.documentation !== undefined) {
+                        parts.push(obj.documentation > 0.5 ? 'More Comments' : (obj.documentation < -0.5 ? 'Fewer Comments' : 'Neutral Comments'));
+                    }
+                    if (obj.typeHinting !== undefined) {
+                        parts.push(obj.typeHinting > 0.5 ? 'Strict Type Hints' : (obj.typeHinting < -0.5 ? 'No Type Hints' : 'Neutral Type Hints'));
+                    }
+                    if (obj.modernSyntax !== undefined) {
+                        parts.push(obj.modernSyntax > 0.5 ? 'Modern Syntax' : (obj.modernSyntax < -0.5 ? 'Legacy Syntax' : 'Neutral Syntax'));
+                    }
+                    return `Prefers: ${parts.join(', ')}`;
+                }
+
                 elements.improveBtn.addEventListener('click', () => {
                     // Get the edited code
                     window.currentEditedCode = elements.outputCode.textContent;
@@ -1328,76 +1473,27 @@
                     elements.improveBtn.classList.add('hidden');
                     elements.editBtn.classList.remove('hidden');
 
-                    // Submit the improvement to the server
-                    function submitImprovement(original, edited, prompt) {
-                        if (window.socket && window.socket.connected) {
-                            // Log detailed information about the improvement being submitted
-                            console.group('Submitting Code Improvement');
-                            console.log('Original code length:', original.length);
-                            console.log('Edited code length:', edited.length);
-                            console.log('Prompt:', prompt);
+                    // Analyze edit to compute multi-dimensional preference vector (documentation, typeHinting, modernSyntax)
+                    const original = window.currentGeneratedCode || '';
+                    const edited = window.currentEditedCode || '';
+                    const preferenceVector = analyzeCodeChanges(original, edited);
 
-                            // Calculate basic metrics
-                            const originalLines = original.split('\n').length;
-                            const editedLines = edited.split('\n').length;
-                            const lineDiff = editedLines - originalLines;
-                            console.log('Line difference:', lineDiff);
+                    // Display locally and log
+                    const pretty = formatPreferenceVector(preferenceVector);
+                    const display = document.getElementById('preference-display');
+                    if (display) display.textContent = pretty;
+                    logMessage(`Preference detected and applied locally: ${pretty}`, 'preference');
 
-                            // Check for comment changes
-                            const originalComments = (original.match(/#/g) || []).length;
-                            const editedComments = (edited.match(/#/g) || []).length;
-                            const commentDiff = editedComments - originalComments;
-                            console.log('Comment difference:', commentDiff);
-                            console.groupEnd();
-
-                            // Determine preference value based on code changes
-                            let preferenceValue = 0;
-                            if (editedLines > originalLines) {
-                                preferenceValue = 1;  // User prefers longer, more verbose code
-                            } else if (editedLines < originalLines) {
-                                preferenceValue = -1; // User prefers shorter, more concise code
-                            } else if (editedComments > originalComments) {
-                                preferenceValue = 0.7;  // User prefers more comments
-                            } else if (editedComments < originalComments) {
-                                preferenceValue = -0.7; // User prefers fewer comments
-                            } else {
-                                preferenceValue = 0.1; // Small change
-                            }
-
-                            // Update the preference display immediately for better UX
-                            const preferenceDisplay = document.getElementById('preference-display');
-                            if (preferenceDisplay) {
-                                let preferenceText = "Neutral";
-                                if (preferenceValue > 0.5) {
-                                    preferenceText = "Verbose Code";
-                                } else if (preferenceValue < -0.5) {
-                                    preferenceText = "Concise Code";
-                                }
-                                preferenceDisplay.textContent = preferenceText;
-                            }
-
-                            // Send the improvement to the server
-                            window.socket.emit('submit_improvement', {
-                                client_id: getClientId(),
-                                original_code: original,
-                                edited_code: edited,
-                                prompt: prompt
-                            });
-
-                            logMessage("Sent code improvement to server", "preference");
-                            logMessage(`Changes: ${lineDiff} lines, ${commentDiff} comments`, "preference");
-                            logMessage(`Preference updated to: ${preferenceValue > 0.5 ? 'Verbose Code' : preferenceValue < -0.5 ? 'Concise Code' : 'Neutral'}`, "preference");
-                        } else {
-                            logMessage("Socket connection not available", "error");
-                        }
+                    // Emit to server for immediate global update
+                    if (window.socket && window.socket.connected) {
+                        window.socket.emit('submit_improvement_and_learn', {
+                            client_id: getClientId(),
+                            preference: preferenceVector
+                        });
+                        logMessage('Submitted improvement for immediate learning (no averaging).', 'success');
+                    } else {
+                        logMessage('Socket connection not available; will apply locally only.', 'warning');
                     }
-
-                    submitImprovement(window.originalGeneratedCode, window.currentEditedCode, window.currentPrompt);
-
-                    logMessage("Improvement submitted. Your preferences are being learned.", "success");
-
-                    // In a real implementation, you might want to trigger training immediately
-                    // For this demo, we'll wait for the server to call fit
                 });
 
                 // Start the connection with improved timeout handling
@@ -1443,6 +1539,24 @@
                 console.error("Initialization error:", e);
             }
         }
+
+        // Initialize Privacy slider display and listener
+        (function initPrivacyControls() {
+            const slider = document.getElementById('privacy-slider');
+            const valueEl = document.getElementById('epsilon-value');
+            const updateBtn = document.getElementById('update-privacy-btn');
+            if (slider && valueEl) {
+                valueEl.textContent = slider.value;
+                // oninput only updates label
+                slider.addEventListener('input', () => { valueEl.textContent = slider.value; });
+            }
+            if (updateBtn && slider) {
+                updateBtn.addEventListener('click', () => {
+                    window.currentEpsilon = slider.value;
+                    logMessage(`Privacy level set to Epsilon = ${window.currentEpsilon}. Future learning will use this setting.`, 'info');
+                });
+            }
+        })();
 
         // Set up Global Update button functionality
         document.getElementById('call-teacher-btn').addEventListener('click', function () {
@@ -1541,17 +1655,24 @@
                 }, 5000);
             });
 
-            // Listen for global preference updates
+            // Listen for global preference updates (vector-friendly display)
             window.socket.on('global_preference_update', function (data) {
-                document.getElementById('preference-display').textContent =
-                    typeof data.preference === 'number' ?
-                        data.preference.toFixed(2) :
-                        JSON.stringify(data.preference);
+                const pref = data.preference;
+                const display = document.getElementById('preference-display');
+                if (display) {
+                    if (typeof pref === 'object' && pref !== null && !Array.isArray(pref)) {
+                        display.textContent = formatPreferenceVector(pref);
+                    } else if (Array.isArray(pref) && pref.length >= 3) {
+                        const obj = { verbosity: pref[0], comments: pref[1], type_hinting: pref[2] };
+                        display.textContent = formatPreferenceVector(obj);
+                    } else if (typeof pref === 'number') {
+                        display.textContent = pref.toFixed(2);
+                    } else {
+                        display.textContent = JSON.stringify(pref);
+                    }
+                }
 
-                logMessage("Received global preference update: " +
-                    (typeof data.preference === 'number' ?
-                        data.preference.toFixed(2) :
-                        JSON.stringify(data.preference)), "preference");
+                logMessage("Received global preference update: " + JSON.stringify(pref), "preference");
             });
 
             // Listen for model update notifications

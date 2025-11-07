@@ -2,6 +2,7 @@ from flask import Flask, request
 from flask_socketio import SocketIO
 import flwr as fl
 from flwr.server.client_manager import SimpleClientManager
+from flwr.common import parameters_to_ndarrays
 import logging
 import requests
 import os
@@ -10,6 +11,7 @@ import torch
 from transformers import AutoModelForCausalLM, AutoTokenizer
 import numpy as np
 from datetime import datetime
+import re
 
 # CaptainAI class for code generation using phi-3-mini model
 class CaptainAI:
@@ -21,8 +23,8 @@ class CaptainAI:
         self.model_name = "microsoft/phi-3-mini-4k-instruct"
         self.tokenizer = AutoTokenizer.from_pretrained(self.model_name)
         
-        # Initialize global preference to neutral (0)
-        self.global_preference = 0.0
+        # Initialize global preference vector to neutral [0,0,0]
+        self.global_preference = np.zeros(3, dtype=float)
         
         try:
             # Check available devices and avoid MPS
@@ -52,9 +54,29 @@ class CaptainAI:
         self.logger.info("CaptainAI initialized successfully!")
     
     def update_global_preference(self, preference_value):
-        # Update the global preference with the new value
-        self.global_preference = preference_value
-        self.logger.info(f"Global preference updated to: {self.global_preference}")
+        # Accept float (legacy) or vector-like; coerce to numpy array length 3
+        try:
+            if isinstance(preference_value, (list, tuple, np.ndarray)):
+                arr = np.array(preference_value, dtype=float).flatten()
+                if arr.size == 0:
+                    arr = np.zeros(3)
+                elif arr.size == 1:
+                    arr = np.array([arr[0], 0.0, 0.0])
+                elif arr.size >= 3:
+                    arr = arr[:3]
+                else:
+                    # pad to length 3
+                    pad = np.zeros(3)
+                    pad[:arr.size] = arr
+                    arr = pad
+            else:
+                # legacy scalar -> map to verbosity only
+                arr = np.array([float(preference_value), 0.0, 0.0])
+        except Exception:
+            arr = np.zeros(3)
+
+        self.global_preference = arr.astype(float)
+        self.logger.info(f"Global preference updated to vector: {self.global_preference.tolist()}")
     
     def generate_response(self, prompt, progress_callback=None):
         """Generate code based on the user's prompt using the phi-3-mini model"""
@@ -66,11 +88,37 @@ class CaptainAI:
                 progress_callback({"status": "formatting", "message": "Formatting prompt for model..."})
             
             # Adjust prompt based on global preference
-            instruction = "Write Python code for: "
-            if self.global_preference > 0.5:
-                instruction = "Write detailed, well-documented Python code with explanations for: "
-            elif self.global_preference < -0.5:
-                instruction = "Write minimal, concise Python code for: "
+            # Build meta-prompt from style vector [documentation, typeHinting, modernSyntax]
+            doc, typeh, modern = 0.0, 0.0, 0.0
+            try:
+                if isinstance(self.global_preference, np.ndarray) and self.global_preference.size >= 3:
+                    doc, typeh, modern = [float(x) for x in self.global_preference[:3]]
+                elif isinstance(self.global_preference, (list, tuple)) and len(self.global_preference) >= 3:
+                    doc, typeh, modern = [float(x) for x in self.global_preference[:3]]
+            except Exception:
+                pass
+
+            directives = []
+            # Documentation directive
+            if doc > 0.5:
+                directives.append("the response MUST be well-documented with clear inline comments and, where applicable, docstrings")
+            elif doc < -0.5:
+                directives.append("the response MUST NOT include any comments or docstrings")
+            # Type hints directive
+            if typeh > 0.5:
+                directives.append("the response MUST include Python type hints for all function parameters and return values")
+            elif typeh < -0.5:
+                directives.append("the response MUST NOT include any Python type hints")
+            # Modern syntax directive
+            if modern > 0.5:
+                directives.append("use modern Python features such as f-strings instead of .format and prefer contemporary idioms")
+            elif modern < -0.5:
+                directives.append("avoid modern syntax such as f-strings; prefer legacy constructs like .format")
+
+            if directives:
+                instruction = "CRITICAL INSTRUCTION: " + "; ".join(directives) + ". Generate Python code for: "
+            else:
+                instruction = "Generate Python code for: "
                 
             # Format the prompt for instruction-tuned model
             formatted_prompt = f"<|user|>\n{instruction}{prompt}\n<|assistant|>\n"
@@ -104,10 +152,44 @@ class CaptainAI:
                 
             # Decode the response and extract only the generated part
             full_response = self.tokenizer.decode(outputs[0], skip_special_tokens=True)
-            
+
             # Extract only the assistant's response
             assistant_response = full_response.split("<|assistant|>")[-1].strip()
-            
+
+            # Post-process: return only the first fenced Python code block if present
+            try:
+                # Prefer an explicit ```python ... ``` block
+                match = re.search(r"```\s*python\s*([\s\S]*?)```", assistant_response, flags=re.IGNORECASE)
+                if not match:
+                    match = re.search(r"```\s*python\s*([\s\S]*?)```", full_response, flags=re.IGNORECASE)
+                # Fall back to any fenced block if explicit language not found
+                if not match:
+                    match = re.search(r"```\s*([\s\S]*?)```", assistant_response, flags=re.IGNORECASE)
+                if not match:
+                    match = re.search(r"```\s*([\s\S]*?)```", full_response, flags=re.IGNORECASE)
+                if match:
+                    code_only = match.group(1).strip()
+                    if code_only:
+                        return code_only
+                # Secondary fallback: find first code-looking line and return from there
+                def extract_from_first_code_line(text: str) -> str:
+                    if not text:
+                        return ""
+                    lines = text.splitlines()
+                    pattern = re.compile(r"^\s*(def |class |import |from |#|if __name__ == ['\"]__main__['\"]:)\b")
+                    for idx, line in enumerate(lines):
+                        if pattern.search(line):
+                            return "\n".join(lines[idx:]).strip()
+                    return ""
+
+                code_tail = extract_from_first_code_line(assistant_response)
+                if not code_tail:
+                    code_tail = extract_from_first_code_line(full_response)
+                if code_tail:
+                    return code_tail
+            except Exception as _:
+                pass
+
             self.logger.info("Code generation completed")
             return assistant_response
         except Exception as e:
@@ -257,19 +339,29 @@ class PreferenceFedAvg(fl.server.strategy.FedAvg):
         self.captain_ai = captain_ai
         
     def aggregate_fit(self, server_round, results, failures):
-        # Call the parent class to aggregate weights
-        aggregated_weights = super().aggregate_fit(server_round, results, failures)
-        
-        if aggregated_weights is not None:
-            # Extract the preference value from the aggregated weights
-            # The preference is stored in the first weight of the model
-            preference_tensor = aggregated_weights[0]
-            preference_value = float(np.mean(preference_tensor))
-            
-            # Update the global preference in CaptainAI
-            self.captain_ai.update_global_preference(preference_value)
-            
-        return aggregated_weights
+        # Call the parent class to aggregate weights (keeps baseline behavior/return type)
+        aggregated = super().aggregate_fit(server_round, results, failures)
+
+        # For demo: immediately set Captain's preference to the single client's update (no averaging)
+        try:
+            if results and len(results) > 0:
+                first_fit_res = results[0][1]  # (ClientProxy, FitRes)
+                client_ndarrays = parameters_to_ndarrays(first_fit_res.parameters)
+                # Derive 3D pref vec from client's weights
+                pref_vec = np.zeros(3, dtype=float)
+                if len(client_ndarrays) >= 2 and client_ndarrays[1].size >= 3:
+                    pref_vec = client_ndarrays[1].flatten()[:3]
+                elif len(client_ndarrays) >= 1:
+                    w0 = client_ndarrays[0]
+                    if w0.ndim == 2 and w0.shape[1] >= 3:
+                        pref_vec = w0.mean(axis=0)[:3]
+                    else:
+                        pref_vec.fill(float(np.mean(w0)))
+                self.captain_ai.update_global_preference(pref_vec)
+        except Exception as e:
+            logger.warning(f"Failed to set preference from single client update: {e}")
+
+        return aggregated
 
 # Strategy that responds after a single client
 strategy = PreferenceFedAvg(
@@ -425,6 +517,46 @@ def handle_teacher_call(data):
         
         return {'status': 'error', 'message': error_message}
 
+@socketio.on('submit_improvement_and_learn')
+def handle_submit_improvement_and_learn(data):
+    """Immediately apply client's multi-dimensional preference vector.
+    Expects payload: { preference: { documentation: d, typeHinting: t, modernSyntax: m }, client_id: ... }
+    """
+    try:
+        pref_obj = (data or {}).get('preference', {})
+        # Normalize to 3D vector [documentation, typeHinting, modernSyntax]
+        if isinstance(pref_obj, dict):
+            d = float(pref_obj.get('documentation', pref_obj.get('comments', 0.0)))
+            t = float(pref_obj.get('typeHinting', pref_obj.get('type_hinting', 0.0)))
+            m = float(pref_obj.get('modernSyntax', 0.0))
+            pref_vec = [d, t, m]
+        elif isinstance(pref_obj, (list, tuple, np.ndarray)):
+            arr = np.array(pref_obj).flatten().tolist()
+            # pad/trim to 3
+            arr = (arr + [0.0, 0.0, 0.0])[:3]
+            pref_vec = arr
+        else:
+            # fallback scalar
+            try:
+                val = float(pref_obj)
+            except Exception:
+                val = 0.0
+            pref_vec = [val, 0.0, 0.0]
+
+        # Set Captain's global preference directly (no averaging)
+        captain.update_global_preference(pref_vec)
+        logger.info(f"Applied immediate preference update from client: {pref_vec}")
+
+        # Broadcast to all clients so dashboards update instantly
+        socketio.emit('global_preference_update', {
+            'preference': { 'documentation': pref_vec[0], 'typeHinting': pref_vec[1], 'modernSyntax': pref_vec[2] }
+        })
+
+        return {'status': 'success'}
+    except Exception as e:
+        logger.error(f"Error in submit_improvement_and_learn: {e}")
+        return {'status': 'error', 'message': str(e)}
+
 @socketio.on('get_global_preference')
 def handle_get_global_preference(data):
     client_id = request.sid
@@ -446,78 +578,6 @@ def handle_get_global_preference(data):
         # Handle errors
         error_message = str(e)
         logger.error(f"Error getting global preference: {error_message}")
-        socketio.emit('preference_error', {
-            'error': error_message,
-            'client_id': client_id
-        }, room=client_id)
-        
-        return {'status': 'error', 'message': error_message}
-
-@socketio.on('submit_improvement')
-def handle_submit_improvement(data):
-    client_id = request.sid
-    original_code = data.get('original_code', '')
-    edited_code = data.get('edited_code', '')
-    prompt = data.get('prompt', '')
-    
-    logger.info(f"Received code improvement from client {client_id}")
-    
-    try:
-        # Compare the line count of original vs edited code
-        original_line_count = len(original_code.split('\n'))
-        edited_line_count = len(edited_code.split('\n'))
-        
-        # Determine preference: 1 for longer code, -1 for shorter code
-        preference_value = 0
-        if edited_line_count > original_line_count:
-            preference_value = 1  # User prefers longer, more verbose code
-            logger.info(f"User made code longer - preference for verbose code")
-        elif edited_line_count < original_line_count:
-            preference_value = -1  # User prefers shorter, more concise code
-            logger.info(f"User made code shorter - preference for concise code")
-        else:
-            # Code length unchanged, but content might have changed
-            # Check if comments were removed
-            original_comment_count = original_code.count('#')
-            edited_comment_count = edited_code.count('#')
-            
-            if edited_comment_count < original_comment_count:
-                preference_value = -0.7  # User prefers less comments
-                logger.info(f"User removed comments - preference for less commented code")
-            elif edited_comment_count > original_comment_count:
-                preference_value = 0.7  # User prefers more comments
-                logger.info(f"User added comments - preference for more commented code")
-            else:
-                preference_value = 0.1  # Small change
-                logger.info(f"Code structure unchanged - small preference update")
-        
-        # Update the global preference directly
-        captain.update_global_preference(preference_value)
-        
-        # Store the prompt for future reference
-        # This allows the model to remember user preferences for specific prompts
-        # In a real implementation, you would store this in a database
-        
-        # Notify the client that the preference has been updated
-        socketio.emit('preference_updated', {
-            'preference_value': preference_value,
-            'message': 'Your code preference has been learned',
-            'client_id': client_id
-        }, room=client_id)
-        
-        # Notify all clients that the model has been updated
-        socketio.emit('model_updated', {
-            'message': 'Model has been updated with new preferences',
-            'updated_by': client_id
-        })
-        
-        logger.info(f"Preference updated for client {client_id}: {preference_value}")
-        return {'status': 'success', 'message': 'Preference updated'}
-        
-    except Exception as e:
-        # Handle errors
-        error_message = str(e)
-        logger.error(f"Error updating preference: {error_message}")
         socketio.emit('preference_error', {
             'error': error_message,
             'client_id': client_id
